@@ -14,8 +14,9 @@
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "node --test",
+    "test:postgres": "node scripts/verify-postgres.mjs",
     "test:e2e": "playwright test",
-    "verify": "npm run lint && npm run typecheck && npm run build && npm test && npm run test:e2e && npm audit --audit-level=high"
+    "verify": "npm run lint && npm run typecheck && npm run build && npm test && npm run test:postgres && npm run test:e2e && npm audit --audit-level=high"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.3",

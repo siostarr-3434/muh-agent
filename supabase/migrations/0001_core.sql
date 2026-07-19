@@ -385,6 +385,21 @@ alter table public.approvals enable row level security;
 alter table public.audit_events enable row level security;
 alter table public.notifications enable row level security;
 
+drop policy if exists "profiles own rows" on public.profiles;
+drop policy if exists "email accounts own rows" on public.email_accounts;
+drop policy if exists "documents own rows" on public.documents;
+drop policy if exists "email messages own rows" on public.email_messages;
+drop policy if exists "agent jobs own rows" on public.agent_jobs;
+drop policy if exists "obligations own rows" on public.obligations;
+drop policy if exists "deadlines own rows" on public.deadlines;
+drop policy if exists "source catalog readable" on public.source_catalog;
+drop policy if exists "source snapshots readable" on public.source_snapshots;
+drop policy if exists "user sources own rows" on public.user_sources;
+drop policy if exists "approvals own rows" on public.approvals;
+drop policy if exists "notifications own rows" on public.notifications;
+drop policy if exists "notifications own read state" on public.notifications;
+drop policy if exists "audit own rows" on public.audit_events;
+
 create policy "profiles own rows" on public.profiles for all to authenticated using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
 create policy "email accounts own rows" on public.email_accounts for select to authenticated using ((select auth.uid()) = user_id);
 create policy "documents own rows" on public.documents for select to authenticated using ((select auth.uid()) = user_id);
