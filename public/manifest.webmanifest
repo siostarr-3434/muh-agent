@@ -1,0 +1,12 @@
+{
+  "name": "Muh Agent",
+  "short_name": "Muh Agent",
+  "description": "Kişisel finans, süre ve belge güvenlik cockpit'i.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07131b",
+  "theme_color": "#07131b",
+  "icons": [
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
