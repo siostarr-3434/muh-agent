@@ -49,6 +49,9 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
+      - name: Verify Postgres migration behavior
+        run: npm run test:postgres
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 

@@ -10,7 +10,7 @@ npm.cmd run verify
 docker build --tag muh-agent:verify .
 ```
 
-- Lint, TypeScript, production build, birim/güvenlik testleri ve Playwright masaüstü+mobil testleri geçmeli.
+- Lint, TypeScript, production build, birim/güvenlik testleri, PostgreSQL 17 migration entegrasyon testi ve Playwright masaüstü+mobil testleri geçmeli.
 - `npm audit --audit-level=high` sıfır high/critical bulgu vermeli.
 - Docker konteyneri non-root kullanıcıyla başlamalı; `/health` ve `/api/session` smoke testleri geçmeli.
 - `git diff` ve sır taraması incelenmeden push yapılmamalı.
