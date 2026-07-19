@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
@@ -66,7 +66,18 @@ select json_build_object(
   'public_tables_without_rls', (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity),
   'authenticated_can_decide', has_function_privilege('authenticated', 'public.decide_approval(uuid,uuid,text)', 'execute'),
   'authenticated_can_update_approvals', has_table_privilege('authenticated', 'public.approvals', 'update'),
-  'service_role_can_decide', has_function_privilege('service_role', 'public.decide_approval(uuid,uuid,text)', 'execute')
+  'service_role_can_decide', has_function_privilege('service_role', 'public.decide_approval(uuid,uuid,text)', 'execute'),
+  'user_sources_source_fk_indexed', exists (
+    select 1
+    from pg_index i
+    join pg_attribute a
+      on a.attrelid = i.indrelid
+      and a.attname = 'source_id'
+    where i.indrelid = 'public.user_sources'::regclass
+      and i.indisvalid
+      and i.indisready
+      and i.indkey[0] = a.attnum
+  )
 );
 `
 
@@ -81,9 +92,19 @@ try {
   await waitForPostgres()
   psql(bootstrap)
 
-  const migration = await readFile(resolve(import.meta.dirname, '..', 'supabase', 'migrations', '0001_core.sql'), 'utf8')
-  psql(migration)
-  psql(migration)
+  const migrationsDirectory = resolve(import.meta.dirname, '..', 'supabase', 'migrations')
+  const migrationFiles = (await readdir(migrationsDirectory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.sql'))
+    .map((entry) => entry.name)
+    .sort()
+  assert.ok(migrationFiles.length > 0, 'No SQL migrations were found')
+
+  for (let application = 0; application < 2; application += 1) {
+    for (const migrationFile of migrationFiles) {
+      const migration = await readFile(resolve(migrationsDirectory, migrationFile), 'utf8')
+      psql(migration)
+    }
+  }
 
   const behavior = psql(behaviorVerification, [0], ['-A', '-t']).stdout
   const resultLine = behavior.split(/\r?\n/).findLast((line) => line.trim().startsWith('{'))
@@ -105,12 +126,13 @@ try {
     profile_trigger: 2,
     public_tables_without_rls: 0,
     service_role_can_decide: true,
+    user_sources_source_fk_indexed: true,
   }
   assert.deepEqual(result, expected, 'Unexpected migration verification result')
   if (rlsRows !== 1) throw new Error(`RLS exposed ${rlsRows} obligation rows instead of 1`)
   if (partialRows !== 0) throw new Error('Failed Gmail transaction left a partial account row')
 
-  console.log(JSON.stringify({ migrationApplications: 2, partialRows, rlsVisibleRows: rlsRows, ...result }))
+  console.log(JSON.stringify({ migrationApplications: migrationFiles.length * 2, migrationFiles, partialRows, rlsVisibleRows: rlsRows, ...result }))
 } finally {
   docker(['stop', container], undefined, [0, 1])
 }

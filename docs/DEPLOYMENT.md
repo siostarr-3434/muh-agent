@@ -20,7 +20,7 @@ docker build --tag muh-agent:verify .
 Muh Agent, başka bir ürünün Supabase projesini kullanmaz.
 
 1. Ayrı EU staging projesini oluştur.
-2. `supabase/migrations/0001_core.sql` dosyasını migration olarak uygula.
+2. `supabase/migrations/` altındaki bekleyen migration dosyalarını zaman damgası sırasıyla uygula; daha önce uygulanmış dosyaları değiştirme.
 3. Security ve Performance Advisor sonuçlarını al; kritik bulguları düzelt.
 4. `gmail-oauth-start`, `gmail-oauth-callback`, `gmail-sync` ve `approval-decision` fonksiyonlarını `supabase/config.toml` içindeki JWT sınırlarıyla yayınla.
 5. Auth redirect allowlist'e yalnızca staging origin ve `/auth/callback` ekle.
