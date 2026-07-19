@@ -21,7 +21,11 @@ function psql(sql, acceptedStatuses = [0], extraArgs = []) {
 
 async function waitForPostgres() {
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (docker(['exec', container, 'pg_isready', '-U', 'postgres'], undefined, [0, 1, 2]).status === 0) return
+    const logResult = docker(['logs', container], undefined, [0])
+    const initializationComplete = `${logResult.stdout}\n${logResult.stderr}`.includes('PostgreSQL init process complete; ready for start up.')
+    const ready = initializationComplete
+      && docker(['exec', container, 'pg_isready', '-U', 'postgres'], undefined, [0, 1, 2]).status === 0
+    if (ready) return
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 500))
   }
   throw new Error('Postgres test container did not become ready')
