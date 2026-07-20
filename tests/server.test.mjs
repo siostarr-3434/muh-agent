@@ -24,6 +24,16 @@ test('runtime config fails closed for partial or insecure live configuration', (
   assert.equal(config.cookieSecure, true)
 })
 
+test('runtime config prefers the hosting platform port', () => {
+  const config = loadRuntimeConfig({
+    MUH_AGENT_PORT: '8080',
+    PORT: '12345',
+  })
+
+  assert.equal(config.port, 12345)
+  assert.equal(config.appOrigin, 'http://127.0.0.1:12345')
+})
+
 test('auth cookies are host-only, HttpOnly, secure, and same-site', () => {
   const parsed = parseSetCookie(serializeAuthCookie({
     name: 'sb-session',
