@@ -15,7 +15,7 @@ Muh Agent; para yükümlülüklerini, resmi yazışmaları, son tarihleri ve has
 - Birim, güvenlik ve gerçek Chrome masaüstü/mobil E2E testleri.
 - Non-root, çok aşamalı Docker imajı ve GitHub Actions kalite kapıları.
 
-Henüz canlı Supabase staging projesi, üretim alan adı, Google OAuth sırları, 24/7 scheduler, OCR veya banka bağlantısı yoktur. DigiD otomasyonu ve otomatik ödeme ürün sınırı dışında kalır. Arayüz bu eksikleri canlıymış gibi göstermez.
+Ayrı Supabase staging projesinde şema ve dört Edge Function yayınlandı; yetkisiz erişim smoke testleri geçti. Üretim hosting/alan adı, Google OAuth sırları, gerçek Gmail kabul testi, 24/7 scheduler, OCR ve banka bağlantısı henüz canlı değildir. DigiD otomasyonu ve otomatik ödeme ürün sınırı dışında kalır. Arayüz bu eksikleri canlıymış gibi göstermez.
 
 ## Yerel çalıştırma
 

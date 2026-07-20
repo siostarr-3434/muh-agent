@@ -18,9 +18,9 @@ function parseOrigin(value, name) {
 }
 
 export function loadRuntimeConfig(environment = process.env) {
-  const port = Number(environment.MUH_AGENT_PORT ?? 5173)
+  const port = Number(environment.PORT ?? environment.MUH_AGENT_PORT ?? 5173)
   const host = clean(environment.MUH_AGENT_HOST) || '127.0.0.1'
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('MUH_AGENT_PORT must be a valid TCP port')
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('PORT or MUH_AGENT_PORT must be a valid TCP port')
 
   const supabaseUrl = clean(environment.SUPABASE_URL)
   const supabasePublishableKey = clean(environment.SUPABASE_PUBLISHABLE_KEY)

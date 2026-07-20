@@ -1,6 +1,7 @@
 .agents/
 .git/
 .github/
+.railway/
 dist/
 node_modules/
 playwright-report/
