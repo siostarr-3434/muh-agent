@@ -16,19 +16,6 @@ function publishableKey() {
   return Deno.env.get('SUPABASE_PUBLISHABLE_KEY') ?? env('SUPABASE_ANON_KEY')
 }
 
-function oauthConfig() {
-  return {
-    clientId: env('GOOGLE_CLIENT_ID'),
-    redirectUri: env('GOOGLE_REDIRECT_URI'),
-  }
-}
-
-function errorCode(error: unknown) {
-  return error instanceof Error && /^(GOOGLE_CLIENT_ID|GOOGLE_REDIRECT_URI) is not configured$/.test(error.message)
-    ? 'oauth_not_configured'
-    : 'oauth_start_failed'
-}
-
 async function authenticatedUser(request: Request) {
   const authorization = request.headers.get('authorization')
   if (!authorization?.startsWith('Bearer ')) return null
@@ -48,7 +35,6 @@ Deno.serve(async (request) => {
   try {
     const user = await authenticatedUser(request)
     if (!user) return json({ error: 'unauthorized' }, 401, cors)
-    const oauth = oauthConfig()
 
     const payload = await request.json().catch(() => ({})) as { includeDrive?: unknown }
     const includeDrive = payload.includeDrive === true
@@ -64,28 +50,27 @@ Deno.serve(async (request) => {
     await admin.from('oauth_states').delete().eq('user_id', user.id).lt('expires_at', new Date().toISOString())
 
     const state = randomState()
+    const redirectUri = env('GOOGLE_REDIRECT_URI')
     const { error } = await admin.from('oauth_states').insert({
       user_id: user.id,
       provider: 'gmail',
       state_hash: await sha256Hex(state),
       scopes,
-      redirect_uri: oauth.redirectUri,
+      redirect_uri: redirectUri,
       expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
     })
     if (error) throw error
 
     const googleUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
-    googleUrl.searchParams.set('client_id', oauth.clientId)
-    googleUrl.searchParams.set('redirect_uri', oauth.redirectUri)
+    googleUrl.searchParams.set('client_id', env('GOOGLE_CLIENT_ID'))
+    googleUrl.searchParams.set('redirect_uri', redirectUri)
     googleUrl.searchParams.set('response_type', 'code')
     googleUrl.searchParams.set('access_type', 'offline')
     googleUrl.searchParams.set('prompt', 'consent')
     googleUrl.searchParams.set('scope', scopes.join(' '))
     googleUrl.searchParams.set('state', state)
     return json({ authorizationUrl: googleUrl.toString() }, 200, cors)
-  } catch (error) {
-    const code = errorCode(error)
-    console.error(code)
-    return json({ error: code }, code === 'oauth_not_configured' ? 503 : 500, cors)
+  } catch {
+    return json({ error: 'oauth_start_failed' }, 500, cors)
   }
 })
