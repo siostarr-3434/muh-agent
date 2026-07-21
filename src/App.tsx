@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { beginGmailConnection, decideApproval, getDashboard, getSession, requestMagicLink, signOut, type DashboardResponse, type SessionResponse } from './api'
+import { ApiError, beginGmailConnection, decideApproval, getDashboard, getSession, requestMagicLink, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
 import type { ApprovalItem, Deadline, EvidenceLevel, MailAccount, Obligation, ObligationStatus, ViewId } from './types'
 
@@ -59,6 +59,16 @@ function initialNotice() {
   if (query.get('gmail') === 'connected') return 'Gmail hesabı bağlandı; ilk güvenli senkronizasyon hazırlanıyor.'
   if (query.has('gmail')) return 'Gmail bağlantısı tamamlanamadı. Ayarlardan yeniden deneyin.'
   return ''
+}
+
+function gmailConnectErrorMessage(error: unknown) {
+  const code = error instanceof ApiError ? error.code : ''
+  if (code === 'unauthorized') return 'Gmail bağlantısı için önce dashboarddan oturum açın.'
+  if (code === 'rate_limited') return 'Gmail bağlantısı için çok sık deneme yapıldı. Bir dakika bekleyin.'
+  if (code === 'oauth_not_configured' || code === 'oauth_start_failed' || code === 'gmail_connect_failed') {
+    return 'Google OAuth yapılandırması tamamlanmamış; mevcut Gmail izinleri değişmedi.'
+  }
+  return 'Gmail bağlantısı başlatılamadı; mevcut yetkiler değişmedi.'
 }
 
 const evidenceLevels = new Set<EvidenceLevel>(['verified', 'review', 'demo'])
@@ -122,6 +132,7 @@ function App() {
   const [liveData, setLiveData] = useState<ReturnType<typeof mapDashboard>>()
   const [liveCounts, setLiveCounts] = useState({ documents: 0, messages: 0 })
   const [approvalsState, setApprovalsState] = useState<ApprovalItem[]>(initialApprovals)
+  const [loginOpen, setLoginOpen] = useState(false)
   const [toast, setToast] = useState(initialNotice)
   const [chatInput, setChatInput] = useState('')
   const [chatMessages, setChatMessages] = useState([
@@ -156,6 +167,7 @@ function App() {
   }, [])
 
   const liveMode = session?.mode === 'live' && session.authenticated
+  const loginRequired = session?.mode === 'live' && !session.authenticated
   const activeObligations = liveData?.obligations ?? obligations
   const activeDeadlines = liveData?.deadlines ?? deadlines
   const activeAccounts = liveData?.accounts ?? mailAccounts
@@ -183,14 +195,19 @@ function App() {
 
   const connectGmail = async () => {
     if (!liveMode) {
+      if (loginRequired) {
+        setLoginOpen(true)
+        showToast('Gmail bağlantısı için önce dashboarddan oturum açın.')
+        return
+      }
       showToast('OAuth kurulumu canlı ortamda henüz yapılandırılmadı.')
       return
     }
     try {
       const { authorizationUrl } = await beginGmailConnection(false)
       window.location.assign(authorizationUrl)
-    } catch {
-      showToast('Gmail bağlantısı başlatılamadı; mevcut yetkiler değişmedi.')
+    } catch (error) {
+      showToast(gmailConnectErrorMessage(error))
     }
   }
 
@@ -216,7 +233,6 @@ function App() {
 
   if (!session && !runtimeError) return <LoadingScreen />
   if (runtimeError) return <FailureScreen message={runtimeError} />
-  if (session?.mode === 'live' && !session.authenticated) return <AuthGate />
   if (liveMode && !liveData) return <LoadingScreen label="Şifreli kayıtlar yükleniyor…" />
 
   const content = (() => {
@@ -229,12 +245,12 @@ function App() {
       case 'sources': return <SourcesView />
       case 'settings': return <SettingsView accounts={activeAccounts} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSignOut={leaveSession} />
       default:
-        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} live={liveMode} obligations={activeObligations} onNavigate={setView} />
+        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} live={liveMode} loginRequired={loginRequired} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
     }
   })()
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-testid="dashboard-shell">
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">M</div>
@@ -282,11 +298,15 @@ function App() {
           </div>
           <div className="topbar-actions">
             <span className="status-chip"><span className="status-dot" /> {liveMode ? 'Canlı kasa bağlı' : 'Veri bağlantısı yok'}</span>
+            {loginRequired && <button className="button secondary login-topbar" data-testid="open-login" onClick={() => setLoginOpen(true)}>Dashboard'dan giriş yap</button>}
             <button className="avatar-button" aria-label="Profil ayarları" onClick={() => setView('settings')}>S</button>
           </div>
         </header>
 
-        <div className="content-wrap">{content}</div>
+        <div className="content-wrap">
+          {loginOpen && <LoginPanel onClose={() => setLoginOpen(false)} />}
+          {content}
+        </div>
       </main>
 
       {view === 'overview' && (
@@ -319,7 +339,7 @@ function FailureScreen({ message }: { message: string }) {
   return <main className="auth-shell"><section className="auth-card panel"><div className="brand-mark">!</div><div className="eyebrow">GÜVENLİ DURUŞ</div><h1>Bağlantı kurulamadı</h1><p>{message}</p><button className="button primary" onClick={() => window.location.reload()}>Yeniden dene</button></section></main>
 }
 
-function AuthGate() {
+function LoginPanel({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
@@ -334,21 +354,21 @@ function AuthGate() {
     }
   }
 
-  return <main className="auth-shell"><section className="auth-card panel"><div className="brand-mark">M</div><div className="eyebrow">KİŞİSEL KASA</div><h1>Güvenli bağlantı ile giriş</h1><p>E-posta adresinize tek kullanımlık bir bağlantı gönderilir. Yeni hesap otomatik açılmaz; parola veya DigiD bilgisi istenmez.</p><form className="auth-form" onSubmit={submit}><label htmlFor="login-email">E-posta adresi</label><input id="login-email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /><button className="button primary" disabled={status === 'sending'}>{status === 'sending' ? 'Gönderiliyor…' : 'Güvenli bağlantı gönder'}</button></form>{status === 'sent' && <div className="auth-notice" role="status">Adres sistemde kayıtlıysa bağlantı gönderildi. Gelen kutunuzu kontrol edin.</div>}{status === 'error' && <div className="auth-notice error" role="alert">İstek tamamlanamadı. Bir dakika sonra yeniden deneyin.</div>}<small>Oturum jetonları JavaScript'e açılmaz; yalnızca HttpOnly çerezde tutulur.</small></section></main>
+  return <section className="login-panel panel" data-testid="login-panel" aria-labelledby="dashboard-login-title"><div className="login-panel-head"><div><div className="eyebrow">DASHBOARD OTURUMU</div><h2 id="dashboard-login-title">Dashboard’dan giriş yap</h2><p>Sayfa açılırken e-posta gönderilmez. Güvenli bağlantı yalnızca bu formu bilinçli olarak gönderdiğinde istenir.</p></div><button type="button" className="button ghost" onClick={onClose}>Kapat</button></div><form className="auth-form" onSubmit={submit}><label htmlFor="login-email">E-posta adresi</label><input id="login-email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /><button className="button primary" disabled={status === 'sending' || status === 'sent'}>{status === 'sending' ? 'Gönderiliyor…' : status === 'sent' ? 'Bağlantı gönderildi' : 'Güvenli bağlantı gönder'}</button></form>{status === 'sent' && <div className="auth-notice" role="status">Adres sistemde kayıtlıysa bağlantı gönderildi. Gelen kutunuzu kontrol edin.</div>}{status === 'error' && <div className="auth-notice error" role="alert">İstek tamamlanamadı. Bir dakika sonra yeniden deneyin.</div>}<small>Oturum jetonları JavaScript'e açılmaz; yalnızca HttpOnly çerezde tutulur.</small></section>
 }
 
 function PageIntro({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail: string; action?: React.ReactNode }) {
   return <div className="page-intro"><div><div className="eyebrow">{eyebrow}</div><h2>{title}</h2><p>{detail}</p></div>{action}</div>
 }
 
-function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, obligations: obligationItems, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; live: boolean; obligations: Obligation[]; onNavigate: (view: ViewId) => void }) {
+function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, loginRequired, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; live: boolean; loginRequired: boolean | undefined; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
   const dueSoon = deadlineItems.filter((item) => item.status !== 'done' && daysUntil(item.date) <= 7).length
   const totalOpen = obligationItems.filter((item) => item.status === 'open' || item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0)
   const connectedAccounts = accounts.filter((item) => item.status === 'connected').length
   const activityItems = live ? [{ id: 'live-session', time: 'Şimdi', title: 'Korumalı oturum doğrulandı', detail: 'Kayıtlar kullanıcıya ait RLS kurallarıyla okundu.', kind: 'system' as const }] : activities
   return <>
-    <PageIntro eyebrow="BUGÜNÜN KONTROL MERKEZİ" title="Önce neyi güvene alıyoruz?" detail="Muh Agent, para hareketi yapmadan önce kanıtı, son tarihi ve insan onayını aynı yerde toplar." action={<button className="button primary" onClick={() => onNavigate('approvals')}>Onay kuyruğunu aç <span>→</span></button>} />
-    <div className="truth-banner"><span className="banner-icon">!</span><div><strong>{live ? 'Kişisel kasa oturumu doğrulandı; dış işlemler yine kapalı.' : 'Şu anda gerçek Gmail, banka, DigiD veya belge bağlantısı yok.'}</strong><p>{live ? 'Canlı kayıtlar RLS ile sınırlandı. Onay vermek yalnızca kararı kaydeder; ödeme veya gönderim ayrı ve denetimli bir adımdır.' : 'Bu ekran yalnızca ürün temelini gösterir. Demo kayıtları ile gerçek kayıtlar birbirine karıştırılmayacak.'}</p></div><EvidencePill level={live ? 'verified' : 'demo'} /></div>
+    <PageIntro eyebrow="BUGÜNÜN KONTROL MERKEZİ" title="Önce neyi güvene alıyoruz?" detail="Muh Agent, para hareketi yapmadan önce kanıtı, son tarihi ve insan onayını aynı yerde toplar." action={loginRequired ? <button className="button primary" data-testid="overview-login" onClick={onLogin}>Dashboard'dan giriş yap <span>→</span></button> : <button className="button primary" onClick={() => onNavigate('approvals')}>Onay kuyruğunu aç <span>→</span></button>} />
+    <div className="truth-banner"><span className="banner-icon">!</span><div><strong>{loginRequired ? 'Dashboard önizleme açık — kişisel kayıtların için giriş yap.' : live ? 'Kişisel kasa oturumu doğrulandı; dış işlemler yine kapalı.' : 'Şu anda gerçek Gmail, banka, DigiD veya belge bağlantısı yok.'}</strong><p>{loginRequired ? 'Sayfa açılışında e-posta gönderilmez. Giriş yaptığında yalnızca sana ait kayıtlar yüklenir.' : live ? 'Canlı kayıtlar RLS ile sınırlandı. Onay vermek yalnızca kararı kaydeder; ödeme veya gönderim ayrı ve denetimli bir adımdır.' : 'Bu ekran yalnızca ürün temelini gösterir. Demo kayıtları ile gerçek kayıtlar birbirine karıştırılmayacak.'}</p></div><EvidencePill level={loginRequired ? 'review' : live ? 'verified' : 'demo'} /></div>
     <div className="metric-grid">
       <MetricCard label="Yaklaşan süre" value={String(dueSoon)} suffix=" adet" detail="7 gün içinde açık iş" tone="amber" />
       <MetricCard label="Açık yükümlülük" value={formatEuro(totalOpen)} suffix="" detail={live ? 'Canlı açık kayıtların toplamı' : 'Demo kayıtlarının toplamı'} tone="blue" />
