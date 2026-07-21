@@ -39,6 +39,16 @@ test('OAuth state consumption is single-use and race resistant', async () => {
   assert.match(callback, /\.rpc\('connect_gmail_account'/)
 })
 
+test('Gmail OAuth start validates configuration before creating an OAuth state', async () => {
+  const start = await readFile(resolve(root, 'supabase/functions/gmail-oauth-start/index.ts'), 'utf8')
+  const configIndex = start.indexOf('const oauth = oauthConfig()')
+  const stateInsertIndex = start.indexOf("from('oauth_states').insert")
+
+  assert.ok(configIndex >= 0, 'OAuth configuration must be validated explicitly')
+  assert.ok(stateInsertIndex > configIndex, 'OAuth state must not be created before configuration validation')
+  assert.match(start, /oauth_not_configured/)
+})
+
 test('package versions are reproducible', async () => {
   const packageJson = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'))
   for (const [name, version] of Object.entries({ ...packageJson.dependencies, ...packageJson.devDependencies })) {
