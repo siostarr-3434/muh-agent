@@ -5,7 +5,11 @@ const emptyDashboard = {
   approvals: [],
   counts: { documents: 0, messages: 0 },
   deadlines: [],
+  knowledgeItems: [],
+  messages: [],
+  notifications: [],
   obligations: [],
+  sources: [],
 }
 
 async function mockSession(page: Page, authenticated: boolean) {
@@ -133,6 +137,65 @@ test('explains a Gmail OAuth configuration failure', async ({ page }) => {
   await page.getByRole('button', { name: 'Gmail hesabı bağla' }).click()
 
   await expect(page.getByRole('status')).toContainText('Google OAuth ayarları')
+})
+
+test('requests Drive scope only after the explicit Drive connect click', async ({ page }) => {
+  let connectBody: { includeDrive?: boolean } | undefined
+  await mockSession(page, true)
+  await page.route('**/api/gmail/connect', async (route) => {
+    connectBody = route.request().postDataJSON() as { includeDrive?: boolean }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test' }) })
+  })
+  await page.route('https://accounts.google.com/**', (route) => route.fulfill({ status: 200, body: 'ok' }))
+
+  await page.goto('/')
+  await page.getByTestId('nav-settings').click()
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes('/api/gmail/connect') && request.method() === 'POST'),
+    page.getByRole('button', { name: 'Gmail + Drive bağla' }).click(),
+  ])
+
+  expect(connectBody).toEqual({ includeDrive: true })
+})
+
+test('saves a manual knowledge item from settings', async ({ page }) => {
+  let knowledgeRequests = 0
+  await mockSession(page, true)
+  await page.route('**/api/knowledge', async (route) => {
+    knowledgeRequests += 1
+    const body = route.request().postDataJSON() as { title?: string; body?: string; category?: string; sourceUrl?: string }
+    expect(body).toEqual({
+      body: 'Önce resmi kaynak ve avukat kontrolü gerekiyor.',
+      category: 'skill',
+      sourceUrl: 'https://ind.nl/',
+      title: 'IND belge kontrolü',
+    })
+    return route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        item: {
+          body: body.body,
+          category: body.category,
+          created_at: '2026-07-22T08:00:00.000Z',
+          evidence_level: 'review',
+          id: 'knowledge-1',
+          source_url: body.sourceUrl,
+          title: body.title,
+        },
+      }),
+    })
+  })
+
+  await page.goto('/')
+  await page.getByTestId('nav-settings').click()
+  await page.getByLabel('Başlık').fill('IND belge kontrolü')
+  await page.getByLabel('Bilgi / skill').fill('Önce resmi kaynak ve avukat kontrolü gerekiyor.')
+  await page.getByLabel('Kaynak URL (opsiyonel)').fill('https://ind.nl/')
+  await page.getByRole('button', { name: 'Bilgi bankasına kaydet' }).click()
+
+  await expect(page.getByRole('status')).toContainText('Bilgi bankasına kaydedildi')
+  expect(knowledgeRequests).toBe(1)
 })
 
 test('lets an authenticated user set a password without email codes', async ({ page }) => {

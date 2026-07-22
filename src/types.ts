@@ -4,6 +4,7 @@ export type ViewId =
   | 'payments'
   | 'documents'
   | 'deadlines'
+  | 'life'
   | 'approvals'
   | 'sources'
   | 'settings'
@@ -53,6 +54,39 @@ export interface MailAccount {
   status: 'not_connected' | 'connected' | 'reauth_required'
   scopes: string[]
   lastSync?: string
+}
+
+export interface DashboardMessage {
+  id: string
+  accountId: string
+  accountEmail: string
+  from: string
+  subject: string
+  receivedAt?: string
+  snippet: string
+  classification: string
+  status: 'queued' | 'processing' | 'processed' | 'review_required' | 'failed'
+  extracted: Record<string, unknown>
+}
+
+export interface NotificationItem {
+  id: string
+  severity: 'info' | 'warning' | 'critical'
+  title: string
+  body: string
+  sourceUrl?: string
+  readAt?: string
+  createdAt: string
+}
+
+export interface KnowledgeItem {
+  id: string
+  category: 'immigration' | 'pregnancy' | 'fine' | 'tax' | 'municipality' | 'health' | 'skill' | 'other'
+  title: string
+  body: string
+  sourceUrl?: string
+  evidence: EvidenceLevel
+  createdAt: string
 }
 
 export interface SourceRecord {

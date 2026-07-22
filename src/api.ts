@@ -15,6 +15,44 @@ export interface DashboardResponse {
     scopes: string[]
     status: string
   }>
+  messages: Array<{
+    account_id: string
+    classification: string | null
+    extracted_data: Record<string, unknown>
+    from_address: string | null
+    id: string
+    processing_status: string
+    provider_message_id: string
+    received_at: string | null
+    snippet: string | null
+    subject: string | null
+  }>
+  notifications: Array<{
+    body: string
+    created_at: string
+    id: string
+    read_at: string | null
+    severity: string
+    source_url: string | null
+    title: string
+  }>
+  knowledgeItems: Array<{
+    body: string
+    category: string
+    created_at: string
+    evidence_level: string
+    id: string
+    source_url: string | null
+    title: string
+  }>
+  sources: Array<{
+    domain: string
+    enabled_by_default: boolean
+    id: string
+    name: string
+    purpose: string
+    trust: string
+  }>
   approvals: Array<{
     actionType: string
     amount: number | null
@@ -48,6 +86,13 @@ export interface DashboardResponse {
     status: string
     title: string
   }>
+}
+
+export interface CreateKnowledgeInput {
+  body: string
+  category: string
+  sourceUrl?: string
+  title: string
 }
 
 export class ApiError extends Error {
@@ -106,6 +151,13 @@ export function decideApproval(id: string, decision: 'approved' | 'rejected') {
 export function beginGmailConnection(includeDrive = false) {
   return request<{ authorizationUrl: string }>('/api/gmail/connect', {
     body: JSON.stringify({ includeDrive }),
+    method: 'POST',
+  })
+}
+
+export function createKnowledgeItem(input: CreateKnowledgeInput) {
+  return request<{ item: DashboardResponse['knowledgeItems'][number] }>('/api/knowledge', {
+    body: JSON.stringify(input),
     method: 'POST',
   })
 }

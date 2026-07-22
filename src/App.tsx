@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ApiError, beginGmailConnection, decideApproval, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
+import { ApiError, beginGmailConnection, createKnowledgeItem, decideApproval, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
-import type { ApprovalItem, Deadline, EvidenceLevel, MailAccount, Obligation, ObligationStatus, ViewId } from './types'
+import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, SourceRecord, ViewId } from './types'
 
 const nav: Array<{ id: ViewId; label: string; icon: string }> = [
   { id: 'overview', label: 'Genel Bakış', icon: '⌂' },
@@ -9,6 +9,7 @@ const nav: Array<{ id: ViewId; label: string; icon: string }> = [
   { id: 'payments', label: 'Ödeme Planı', icon: '€' },
   { id: 'documents', label: 'Evrak Kasası', icon: '▤' },
   { id: 'deadlines', label: 'Haklar & Süreler', icon: '◷' },
+  { id: 'life', label: 'Yaşam Radar', icon: '✦' },
   { id: 'approvals', label: 'Onay Merkezi', icon: '✓' },
   { id: 'sources', label: 'Kaynaklar', icon: '◎' },
   { id: 'settings', label: 'Ayarlar', icon: '⚙' },
@@ -26,6 +27,70 @@ const evidenceLabel: Record<EvidenceLevel, string> = {
   review: 'İnceleme gerekli',
   demo: 'Demo veri',
 }
+
+const knowledgeCategoryLabel: Record<KnowledgeItem['category'], string> = {
+  fine: 'Ceza',
+  health: 'Sağlık',
+  immigration: 'IND / oturum',
+  municipality: 'Belediye',
+  other: 'Diğer',
+  pregnancy: 'Hamilelik',
+  skill: 'Skill / yöntem',
+  tax: 'Vergi',
+}
+
+const processingLabel: Record<DashboardMessage['status'], string> = {
+  failed: 'Hata',
+  processed: 'İşlendi',
+  processing: 'İşleniyor',
+  queued: 'Kuyrukta',
+  review_required: 'İnceleme',
+}
+
+const lifeRadarItems = [
+  {
+    source: 'Gemeente Waterland',
+    tag: 'Belediye',
+    text: 'Nieuwland 51, Broek in Waterland 1151 AZ adresi belediye işlemleri için Gemeente Waterland hattına düşer. Vergi, adres, doğum kaydı ve bazı sosyal destek başlıkları burada takip edilmeli.',
+    title: 'Adres ve belediye merkezi',
+    url: 'https://www.waterland.nl/',
+  },
+  {
+    source: 'IND',
+    tag: 'Oturum',
+    text: 'Kennismigrant dosyasında kritik kontrol: yeni işverenin erkend referent durumu, maaş kriteri, karar/itiraz tarihleri ve IND’nin istediği belge listesi avukatla aynı tabloda tutulmalı.',
+    title: 'IND dosyası yüksek öncelik',
+    url: 'https://ind.nl/en/residence-permits/work/highly-skilled-migrant',
+  },
+  {
+    source: 'IND',
+    tag: '5 yıl',
+    text: '5 yıl kesintisiz yasal oturum eşiği kalıcı oturum ve vatandaşlık kontrolü için ayrı incelenmeli. Bu, mevcut iptal/itiraz dosyasından bağımsız kanıt gerektirir.',
+    title: 'Kalıcı oturum / vatandaşlık kontrolü',
+    url: 'https://ind.nl/en/replace-extend-renew-and-change/permanent-residency/permanent-residence-permit',
+  },
+  {
+    source: 'Rijksoverheid / UWV',
+    tag: 'Hamilelik',
+    text: 'Hamilelikte verloskundige, kraamzorg, doğum izni, partner izni, doğum kaydı ve kinderbijslag başlıkları ayrı son tarih ve belge listesine bağlanmalı.',
+    title: 'Hamilelik hakları ve yapılacaklar',
+    url: 'https://www.rijksoverheid.nl/onderwerpen/zwangerschapsverlof-en-bevallingsverlof',
+  },
+  {
+    source: 'CJIB / Rechtspraak',
+    tag: 'Ceza',
+    text: 'Cezalarda ödeme, taksit ve itiraz aynı anda ele alınmamalı. Belge numarası, karar tarihi, ödeme tarihi ve itiraz kanalı önce doğrulanmalı.',
+    title: 'Ceza ödeme/itiraz güvenlik kapısı',
+    url: 'https://www.cjib.nl/en/do-you-disagree-traffic-fine',
+  },
+  {
+    source: 'MijnOverheid / DigiD',
+    tag: 'DigiD',
+    text: 'DigiD kimlik bilgisi uygulamada saklanmaz. Berichtenbox ve kurum portalları için kullanıcı manuel giriş yapar; dashboard sadece kontrol listesi ve kaynak linki gösterir.',
+    title: 'Devlet mesaj kutusu sınırı',
+    url: 'https://mijnoverheid.nl/',
+  },
+]
 
 const formatEuro = (amount: number) =>
   new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount)
@@ -129,7 +194,53 @@ function mapDashboard(payload: DashboardResponse) {
     scopes: item.scopes,
     status: item.status === 'connected' ? 'connected' : 'reauth_required',
   }))
-  return { accounts: liveAccounts, approvals: liveApprovals, deadlines: liveDeadlines, obligations: liveObligations }
+  const accountsById = new Map(liveAccounts.map((account) => [account.id, account.email]))
+  const liveMessages: DashboardMessage[] = payload.messages.map((item) => {
+    const status = ['queued', 'processing', 'processed', 'review_required', 'failed'].includes(item.processing_status) ? item.processing_status as DashboardMessage['status'] : 'queued'
+    return {
+      accountEmail: accountsById.get(item.account_id) ?? 'Bilinmeyen hesap',
+      accountId: item.account_id,
+      classification: item.classification ?? 'general',
+      extracted: item.extracted_data ?? {},
+      from: item.from_address ?? 'Gönderen yok',
+      id: item.id,
+      receivedAt: item.received_at ?? undefined,
+      snippet: item.snippet ?? '',
+      status,
+      subject: item.subject ?? '(konu yok)',
+    }
+  })
+  const liveNotifications: NotificationItem[] = payload.notifications.map((item) => ({
+    body: item.body,
+    createdAt: item.created_at,
+    id: item.id,
+    readAt: item.read_at ?? undefined,
+    severity: item.severity === 'critical' || item.severity === 'warning' ? item.severity : 'info',
+    sourceUrl: item.source_url ?? undefined,
+    title: item.title,
+  }))
+  const liveSources: SourceRecord[] = payload.sources.map((item) => ({
+    domain: item.domain,
+    enabled: item.enabled_by_default,
+    id: item.id,
+    lastChecked: 'Kaynak kataloğu',
+    name: item.name,
+    purpose: item.purpose,
+    trust: item.trust === 'secondary' ? 'secondary' : 'official',
+  }))
+  const liveKnowledge: KnowledgeItem[] = payload.knowledgeItems.map((item) => {
+    const category = Object.hasOwn(knowledgeCategoryLabel, item.category) ? item.category as KnowledgeItem['category'] : 'other'
+    return {
+      body: item.body,
+      category,
+      createdAt: item.created_at,
+      evidence: evidenceLevels.has(item.evidence_level as EvidenceLevel) ? item.evidence_level as EvidenceLevel : 'review',
+      id: item.id,
+      sourceUrl: item.source_url ?? undefined,
+      title: item.title,
+    }
+  })
+  return { accounts: liveAccounts, approvals: liveApprovals, deadlines: liveDeadlines, knowledge: liveKnowledge, messages: liveMessages, notifications: liveNotifications, obligations: liveObligations, sources: liveSources }
 }
 
 function EvidencePill({ level }: { level: EvidenceLevel }) {
@@ -182,6 +293,10 @@ function App() {
   const activeObligations = liveData?.obligations ?? obligations
   const activeDeadlines = liveData?.deadlines ?? deadlines
   const activeAccounts = liveData?.accounts ?? mailAccounts
+  const activeKnowledge = liveData?.knowledge ?? []
+  const activeMessages = liveData?.messages ?? []
+  const activeNotifications = liveData?.notifications ?? []
+  const activeSources = liveData?.sources.length ? liveData.sources : sources
   const pendingApprovals = approvalsState.filter((item) => item.status === 'pending').length
 
   const showToast = (message: string) => {
@@ -204,7 +319,7 @@ function App() {
     showToast('Onay demo kaydına işlendi; dış sistemde işlem yapılmadı.')
   }
 
-  const connectGmail = async () => {
+  const connectGmail = async (includeDrive = false) => {
     if (!liveMode) {
       if (loginRequired) {
         setLoginOpen(true)
@@ -215,10 +330,37 @@ function App() {
       return
     }
     try {
-      const { authorizationUrl } = await beginGmailConnection(false)
+      const { authorizationUrl } = await beginGmailConnection(includeDrive)
       window.location.assign(authorizationUrl)
     } catch (error) {
       showToast(gmailConnectErrorMessage(error))
+    }
+  }
+
+  const saveKnowledge = async (input: { body: string; category: string; sourceUrl?: string; title: string }) => {
+    if (!liveMode) {
+      showToast(loginRequired ? 'Bilgi kaydı için önce dashboarddan oturum açın.' : 'Bilgi bankası canlı ortamda kaydedilir.')
+      if (loginRequired) setLoginOpen(true)
+      return false
+    }
+    try {
+      const { item } = await createKnowledgeItem(input)
+      const category = Object.hasOwn(knowledgeCategoryLabel, item.category) ? item.category as KnowledgeItem['category'] : 'other'
+      const nextItem: KnowledgeItem = {
+        body: item.body,
+        category,
+        createdAt: item.created_at,
+        evidence: evidenceLevels.has(item.evidence_level as EvidenceLevel) ? item.evidence_level as EvidenceLevel : 'review',
+        id: item.id,
+        sourceUrl: item.source_url ?? undefined,
+        title: item.title,
+      }
+      setLiveData((current) => current ? { ...current, knowledge: [nextItem, ...current.knowledge] } : current)
+      showToast('Bilgi bankasına kaydedildi. Ajan bunu önerilerde inceleme kaydı olarak kullanacak.')
+      return true
+    } catch {
+      showToast('Bilgi kaydedilemedi; kayıt değiştirilmedi.')
+      return false
     }
   }
 
@@ -248,15 +390,16 @@ function App() {
 
   const content = (() => {
     switch (view) {
-      case 'inbox': return <InboxView live={liveMode} messageCount={liveCounts.messages} />
+      case 'inbox': return <InboxView accounts={activeAccounts} live={liveMode} messageCount={liveCounts.messages} messages={activeMessages} />
       case 'payments': return <PaymentsView items={activeObligations} live={liveMode} onOpenApprovals={() => setView('approvals')} />
       case 'documents': return <DocumentsView documentCount={liveCounts.documents} live={liveMode} />
       case 'deadlines': return <DeadlinesView items={activeDeadlines} live={liveMode} />
+      case 'life': return <LifeRadarView knowledge={activeKnowledge} live={liveMode} notifications={activeNotifications} onOpenSettings={() => setView('settings')} />
       case 'approvals': return <ApprovalsView items={approvalsState} live={liveMode} onApprove={approve} />
-      case 'sources': return <SourcesView />
-      case 'settings': return <SettingsView accounts={activeAccounts} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSignOut={leaveSession} />
+      case 'sources': return <SourcesView sources={activeSources} />
+      case 'settings': return <SettingsView accounts={activeAccounts} knowledge={activeKnowledge} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSaveKnowledge={saveKnowledge} onSignOut={leaveSession} />
       default:
-        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} live={liveMode} loginRequired={loginRequired} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
+        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} live={liveMode} loginRequired={loginRequired} notifications={activeNotifications} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
     }
   })()
 
@@ -427,7 +570,7 @@ function PageIntro({ eyebrow, title, detail, action }: { eyebrow: string; title:
   return <div className="page-intro"><div><div className="eyebrow">{eyebrow}</div><h2>{title}</h2><p>{detail}</p></div>{action}</div>
 }
 
-function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, loginRequired, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; live: boolean; loginRequired: boolean | undefined; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
+function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, loginRequired, notifications, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; live: boolean; loginRequired: boolean | undefined; notifications: NotificationItem[]; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
   const dueSoon = deadlineItems.filter((item) => item.status !== 'done' && daysUntil(item.date) <= 7).length
   const totalOpen = obligationItems.filter((item) => item.status === 'open' || item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0)
   const connectedAccounts = accounts.filter((item) => item.status === 'connected').length
@@ -441,6 +584,7 @@ function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, log
       <MetricCard label="İnsan onayı" value={String(approvals.filter((item) => item.status === 'pending').length)} suffix=" bekliyor" detail="Dış işlem yapılmadı" tone="violet" />
       <MetricCard label="Bağlı hesap" value={String(connectedAccounts)} suffix=" / 4" detail={connectedAccounts ? 'Salt-okunur OAuth' : 'OAuth kurulumu bekliyor'} tone="green" />
     </div>
+    {notifications.length > 0 && <section className="panel notification-strip"><div><div className="eyebrow">CANLI UYARILAR</div><h3>{notifications.length} yeni radar kaydı</h3></div><button className="button secondary" onClick={() => onNavigate('life')}>Yaşam Radar’ı aç →</button></section>}
     <div className="overview-grid">
       <section className="panel priority-panel">
         <div className="panel-head"><div><div className="eyebrow">ÖNCELİK KUYRUĞU</div><h3>Bugün ilgilenmen gerekenler</h3></div><button className="text-button" onClick={() => onNavigate('deadlines')}>Tümünü gör →</button></div>
@@ -469,8 +613,9 @@ function DeadlineRow({ item }: { item: Deadline }) {
   return <div className="deadline-row"><div className={`deadline-icon ${item.urgency}`}>{item.urgency === 'critical' ? '!' : item.urgency === 'soon' ? '◷' : '○'}</div><div className="deadline-main"><strong>{item.title}</strong><span>{item.owner} · {item.date}</span></div><div className={`deadline-count ${item.urgency}`}>{days < 0 ? `${Math.abs(days)} gün geçti` : days === 0 ? 'Bugün' : `${days} gün`}</div></div>
 }
 
-function InboxView({ live, messageCount }: { live: boolean; messageCount: number }) {
-  return <><PageIntro eyebrow="GELEN KUTUSU" title={live ? `${messageCount} güvenli mesaj kaydı` : 'E-posta akışı henüz bağlanmadı'} detail={live ? 'Mesajlar salt-okunur Gmail kapsamı ve idempotent sağlayıcı kimliğiyle izlenir.' : 'Kimi sürümündeki “canlı akış” iddiasını burada varsaymıyoruz. Önce OAuth bağlantısı, sonra idempotent senkronizasyon kurulacak.'} /><div className="empty-state large"><div className="empty-icon">✉</div><h3>{messageCount ? 'Mesaj gövdeleri bu özet ekranda açılmıyor' : 'İşlenmiş mesaj yok'}</h3><p>Gmail hesapları için yalnızca `gmail.readonly` kapsamı istenir. Mesaj işlenirken kaynak, hash ve işleme zamanı kaydedilir.</p><EvidencePill level={live ? 'verified' : 'review'} /></div><section className="panel"><div className="panel-head"><div><div className="eyebrow">GÜVENLİK SINIRI</div><h3>Bu ekranın yapmayacağı şeyler</h3></div></div><div className="guardrail-grid"><Guardrail title="DigiD şifresi istemez" text="DigiD'ye otomatik giriş veya kimlik bilgisi saklama yok." /><Guardrail title="Mail göndermeyi durdurur" text="Avukat, kurum veya işverene gönderim insan onayı olmadan çalışmaz." /><Guardrail title="Eki körlemesine açmaz" text="Dosya türü, boyutu ve zararlı içerik kontrolünden geçmeden işlenmez." /></div></section></>
+function InboxView({ accounts, live, messageCount, messages }: { accounts: MailAccount[]; live: boolean; messageCount: number; messages: DashboardMessage[] }) {
+  const connected = accounts.filter((account) => account.status === 'connected')
+  return <><PageIntro eyebrow="GELEN KUTUSU" title={live ? `${messageCount} güvenli mesaj kaydı` : 'E-posta akışı henüz bağlanmadı'} detail={live ? 'Her mesaj hangi Gmail hesabından okunduğu bilgisiyle gösterilir. Gövde burada açılmaz; ödeme/itiraz kararı için resmi belge ayrıca doğrulanır.' : 'Önce OAuth bağlantısı, sonra idempotent senkronizasyon ve hesap bazlı kaynak izi.'} /><section className="panel account-scan-panel"><div className="panel-head"><div><div className="eyebrow">TARANAN HESAPLAR</div><h3>Bu hesapların gelen kutusu izleniyor</h3></div><span className={`pill evidence-${connected.length ? 'verified' : 'review'}`}>{connected.length} bağlı</span></div><div className="scan-grid">{connected.length ? connected.map((account) => <div className="scan-card" key={account.id}><strong>{account.email}</strong><span>{account.lastSync ? `Son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'İlk tarama bekleniyor'}</span><small>{account.scopes.includes('https://www.googleapis.com/auth/drive.readonly') ? 'Gmail + Drive izni' : 'Sadece Gmail'}</small></div>) : <div className="empty-inline">Henüz taranan Gmail hesabı yok.</div>}</div></section><section className="panel message-panel"><div className="panel-head"><div><div className="eyebrow">MESAJ KAYITLARI</div><h3>Kaynak hesap ve sınıflandırma</h3></div><EvidencePill level={live ? 'verified' : 'review'} /></div><div className="message-list">{messages.length ? messages.map((message) => <div className="message-row" key={message.id}><div className={`message-severity ${message.status === 'review_required' ? 'hot' : ''}`}>✉</div><div className="message-main"><div className="message-meta"><span>{message.accountEmail}</span><span>{message.receivedAt ? new Date(message.receivedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span></div><strong>{message.subject}</strong><p>{message.snippet || 'Özet yok.'}</p><small>Gönderen: {message.from}</small></div><div className="message-tags"><span className="pill evidence-review">{message.classification}</span><span className="pill">{processingLabel[message.status]}</span></div></div>) : <div className="empty-state large"><div className="empty-icon">✉</div><h3>{messageCount ? 'Son tarama henüz detay döndürmedi' : 'İşlenmiş mesaj yok'}</h3><p>Worker çalıştığında Gmail metadata’sı hesap bazlı kaydedilir ve ceza/vergi/IND/son-tarih sinyalleri ayrı kayıt üretir.</p><EvidencePill level={live ? 'verified' : 'review'} /></div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">GÜVENLİK SINIRI</div><h3>Bu ekranın yapmayacağı şeyler</h3></div></div><div className="guardrail-grid"><Guardrail title="DigiD şifresi istemez" text="DigiD'ye otomatik giriş veya kimlik bilgisi saklama yok." /><Guardrail title="Mail göndermeyi durdurur" text="Avukat, kurum veya işverene gönderim insan onayı olmadan çalışmaz." /><Guardrail title="Eki körlemesine açmaz" text="Dosya türü, boyutu ve zararlı içerik kontrolünden geçmeden işlenmez." /></div></section></>
 }
 
 function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; live: boolean; onOpenApprovals: () => void }) {
@@ -489,17 +634,44 @@ function DeadlinesView({ items, live }: { items: Deadline[]; live: boolean }) {
   return <><PageIntro eyebrow="HAKLAR, SÜRELER, DOSYALAR" title="Unutulacak tarihi bırakma" detail="Hukuk ve sağlık alanındaki kayıtlar kaynak ve tarih olmadan kesin bilgi olarak gösterilmez." action={<button className="button secondary">Takvim dışa aktar (hazırlık)</button>} /><div className="deadline-board">{items.length ? items.map((item) => <div className="panel deadline-card" key={item.id}><div className={`deadline-icon ${item.urgency}`}>{item.urgency === 'critical' ? '!' : '◷'}</div><div className="eyebrow">{item.owner}</div><h3>{item.title}</h3><div className="date-large">{item.date}</div><div className="card-footer"><EvidencePill level={item.evidence} /><span>{item.status === 'waiting' ? 'Yanıt bekliyor' : item.status === 'done' ? 'Tamamlandı' : 'Aksiyon gerekli'}</span></div></div>) : <div className="panel empty-inline">{live ? 'Canlı son tarih kaydı yok.' : 'Demo son tarih kaydı yok.'}</div>}</div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">DOSYA GÜVENLİĞİ</div><h3>IND dosyasında sonraki doğru adım</h3></div><EvidencePill level="review" /></div><p>Bu cockpit, yaşadığın oturum sürecinde belge listesi, son tarihler ve avukata sorulacak sorular için düzenleyici olabilir. “%100 sonuç”, gizli hile veya avukatın yerine karar verme iddiası yoktur.</p><div className="question-list"><span>□ Mevcut IND yazısının tarihi ve referans numarası kaydedildi mi?</span><span>□ Yeni işverenin erkend referent durumu avukat tarafından doğrulandı mı?</span><span>□ Maaş kriteri doğru yıl ve oturum türüyle eşleştirildi mi?</span></div></section></>
 }
 
+function LifeRadarView({ knowledge, live, notifications, onOpenSettings }: { knowledge: KnowledgeItem[]; live: boolean; notifications: NotificationItem[]; onOpenSettings: () => void }) {
+  return <><PageIntro eyebrow="YAŞAM RADAR" title="Hollanda’da seni etkileyen kurum, süre ve haklar" detail="Bu bölüm resmi kaynakları, bağlı Gmail sinyallerini ve senin manuel eklediğin bilgileri bir araya getirir. Hukuki/medikal karar yerine geçmez; avukat veya resmi kurumla doğrulanacak aksiyon listesi üretir." action={<button className="button primary" onClick={onOpenSettings}>Bilgi / skill ekle →</button>} /><div className="life-hero panel"><div><div className="eyebrow">KİŞİSEL BAĞLAM</div><h3>Adres: Nieuwland 51, Broek in Waterland 1151 AZ</h3><p>Belediye odağı: Gemeente Waterland. Öncelikler: IND dosyası, 5 yıl oturum eşiği, hamilelik hakları, CJIB/vergi/mahkeme yazışmaları ve Berichtenbox kontrolü.</p></div><EvidencePill level="review" /></div><div className="life-grid">{lifeRadarItems.map((item) => <article className="panel life-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.text}</p><small>{item.source}</small></article>)}</div><div className="overview-grid"><section className="panel"><div className="panel-head"><div><div className="eyebrow">CANLI UYARILAR</div><h3>Gmail worker’ın yakaladığı riskler</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{notifications.length} kayıt</span></div><div className="notification-list">{notifications.length ? notifications.map((item) => <div className={`notification-row ${item.severity}`} key={item.id}><strong>{item.title}</strong><p>{item.body}</p><span>{new Date(item.createdAt).toLocaleString('tr-TR')}</span></div>) : <div className="empty-inline">{live ? 'Henüz canlı uyarı yok. Gmail worker ilk taramadan sonra burada görünür.' : 'Canlı oturum yok; demo uyarı üretilmez.'}</div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ</div><h3>Manuel kayıtlı bilgi / skill</h3></div><button className="text-button" onClick={onOpenSettings}>Ekle →</button></div><div className="knowledge-list">{knowledge.length ? knowledge.slice(0, 6).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p>{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Kaynak ↗</a>}</div>) : <div className="empty-inline">Henüz manuel bilgi yok. Ayarlar’dan “skill / yöntem / hak” ekleyebilirsin.</div>}</div></section></div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">YETKİ SINIRI</div><h3>DigiD, BSN, ödeme ve resmi başvuru otomatikleşmez</h3></div><EvidencePill level="verified" /></div><p>Sistem sana kaynaklı kontrol listesi, belge paketi ve uyarı üretir. DigiD şifresi/BSN saklamaz; itiraz, ödeme, form gönderimi veya kurumla yazışma ancak ayrı ekranda metin ve kanıtı görüp sen onayladıktan sonra ilerler.</p></section></>
+}
+
 function ApprovalsView({ items, live, onApprove }: { items: ApprovalItem[]; live: boolean; onApprove: (id: string) => void | Promise<void> }) {
   return <><PageIntro eyebrow="İNSAN KONTROLÜ" title="Onay vermeden hiçbir kritik işlem yok" detail={live ? 'Karar canlı audit kaydına yazılır; yürütme ayrı bir worker ve yeniden doğrulama gerektirir.' : 'Bu merkezdeki butonlar yalnızca yerel demo durumunu değiştirir; banka veya e-posta tarafında işlem yapmaz.'} /><div className="approval-list">{items.length ? items.map((item) => <div className={`panel approval-card ${item.status}`} key={item.id}><div className={`approval-icon ${item.risk}`}>{item.action === 'payment' ? '€' : item.action === 'send' ? '✉' : '↗'}</div><div className="approval-content"><div className="approval-top"><span className={`risk-label ${item.risk}`}>{item.risk === 'high' ? 'Yüksek risk' : item.risk === 'medium' ? 'Orta risk' : 'Düşük risk'}</span><span className="approval-status">{item.status === 'pending' ? 'Onay bekliyor' : item.status === 'rejected' ? 'Reddedildi' : live ? 'Karar kaydedildi' : 'Demo onaylandı'}</span></div><h3>{item.title}</h3><p>{item.description}</p>{item.amount && <strong className="approval-amount">{formatEuro(item.amount)}</strong>}<div className="approval-actions">{item.status === 'pending' ? <><button className="button primary" onClick={() => void onApprove(item.id)}>{live ? 'Kararı onayla' : 'Demo onayı ver'}</button><button className="button ghost">Detayları incele</button></> : <EvidencePill level={live ? 'verified' : 'demo'} />}</div></div></div>) : <div className="panel empty-inline">Bekleyen onay kaydı yok.</div>}</div><div className="info-callout"><strong>Onay politikası sabit:</strong><span>Ödeme, dışarıya e-posta, resmi başvuru, hesabı bağlama ve ayar değiştirme işlemleri için yeniden doğrulama + audit log gerekir.</span></div></>
 }
 
-function SourcesView() {
-  return <><PageIntro eyebrow="KAYNAK KAYDI" title="Resmi kaynağı olmayan bilgi öneri değildir" detail="Ajan, Hollanda kurumları için allowlist kullanacak ve her çıkarımın kaynağını, tarihini ve geçerlilik durumunu gösterecek." action={<button className="button secondary">Kaynakları yenile (hazırlık)</button>} /><div className="source-grid">{sources.map((source) => <div className="panel source-card" key={source.id}><div className="source-top"><span className="source-seal">◎</span><span className="pill official-pill">Resmi alan adı</span></div><h3>{source.name}</h3><a href={`https://${source.domain}`} target="_blank" rel="noreferrer">{source.domain} ↗</a><p>{source.purpose}</p><div className="source-footer"><span>{source.lastChecked}</span><span className="source-toggle"><span className={source.enabled ? 'toggle-on' : ''} /> {source.enabled ? 'İzleme açık' : 'Kapalı'}</span></div></div>)}</div></>
+function SourcesView({ sources: sourceItems }: { sources: SourceRecord[] }) {
+  return <><PageIntro eyebrow="KAYNAK KAYDI" title="Resmi kaynağı olmayan bilgi öneri değildir" detail="Ajan, Hollanda kurumları için allowlist kullanacak ve her çıkarımın kaynağını, tarihini ve geçerlilik durumunu gösterecek." action={<button className="button secondary">Kaynakları yenile (hazırlık)</button>} /><div className="source-grid">{sourceItems.map((source) => <div className="panel source-card" key={source.id}><div className="source-top"><span className="source-seal">◎</span><span className="pill official-pill">Resmi alan adı</span></div><h3>{source.name}</h3><a href={`https://${source.domain}`} target="_blank" rel="noreferrer">{source.domain} ↗</a><p>{source.purpose}</p><div className="source-footer"><span>{source.lastChecked}</span><span className="source-toggle"><span className={source.enabled ? 'toggle-on' : ''} /> {source.enabled ? 'İzleme açık' : 'Kapalı'}</span></div></div>)}</div></>
 }
 
-function SettingsView({ accounts, live, onConnect, onNotice, onSignOut }: { accounts: MailAccount[]; live: boolean; onConnect: () => void | Promise<void>; onNotice: (message: string) => void; onSignOut: () => void | Promise<void> }) {
+function SettingsView({ accounts, knowledge, live, onConnect, onNotice, onSaveKnowledge, onSignOut }: { accounts: MailAccount[]; knowledge: KnowledgeItem[]; live: boolean; onConnect: (includeDrive?: boolean) => void | Promise<void>; onNotice: (message: string) => void; onSaveKnowledge: (input: { body: string; category: string; sourceUrl?: string; title: string }) => Promise<boolean>; onSignOut: () => void | Promise<void> }) {
+  const [knowledgeCategory, setKnowledgeCategory] = useState<KnowledgeItem['category']>('skill')
+  const [knowledgeTitle, setKnowledgeTitle] = useState('')
+  const [knowledgeBody, setKnowledgeBody] = useState('')
+  const [knowledgeSource, setKnowledgeSource] = useState('')
+  const [savingKnowledge, setSavingKnowledge] = useState(false)
   const connected = accounts.filter((account) => account.status === 'connected').length
-  return <><PageIntro eyebrow="AYARLAR VE BAĞLANTILAR" title="Yetkiyi küçük ve görünür tut" detail="Her hesap ve kurum için hangi kapsamın verildiği, son senkronizasyon ve iptal düğmesi ayrı görünür." action={<button className="button primary" onClick={() => void onConnect()}>Gmail hesabı bağla</button>} /><section className="panel settings-section"><div className="panel-head"><div><div className="eyebrow">E-POSTA HESAPLARI</div><h3>4 Gmail hesabı için bağlantı durumu</h3></div><span className={`pill evidence-${connected ? 'verified' : 'review'}`}>{connected} / 4 bağlı</span></div><div className="accounts-list">{accounts.length ? accounts.map((account) => <div className="account-row" key={account.id}><span className="connection-icon gmail">G</span><div><strong>{account.email}</strong><span>{account.provider} · {account.lastSync ? `son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'son tarama yok'}</span></div><span className="scope-empty">{account.scopes.length ? `${account.scopes.length} kapsam` : 'Kapsam verilmedi'}</span><span className={`pill evidence-${account.status === 'connected' ? 'verified' : 'review'}`}>{account.status === 'connected' ? 'Bağlı' : 'Yeniden yetkilendir'}</span></div>) : <div className="empty-inline">Henüz hesap bağlı değil.</div>}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">GÜVENLİK TERCİHLERİ</div><h3>Kalıcı kurallar</h3><div className="setting-row"><div><strong>Otomatik ödeme</strong><span>Daima kapalı; yalnızca onaylı taslak</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>DigiD otomasyonu</strong><span>Kimlik bilgisi saklanmaz</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>Hassas veri maskeleme</strong><span>Loglarda açık</span></div><span className="switch on">Açık</span></div></section><section className="panel"><div className="eyebrow">VERİ HAKLARI</div><h3>Kontrol sende</h3><p className="setting-copy">Veriyi dışa aktarma, bağlantıyı iptal etme ve tüm veriyi silme işlemleri ayrı, geri dönüşü açık adımlar olacak.</p><button className="button ghost" onClick={() => onNotice('Veri politikası uygulama öncesi hukuk ve güvenlik incelemesinde.')}>Veri politikası taslağı</button>{live && <button className="button secondary signout-button" onClick={() => void onSignOut()}>Bu oturumu kapat</button>}</section></div>{live && <PasswordPanel onNotice={onNotice} />}</>
+
+  const submitKnowledge = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSavingKnowledge(true)
+    const saved = await onSaveKnowledge({
+      body: knowledgeBody,
+      category: knowledgeCategory,
+      sourceUrl: knowledgeSource || undefined,
+      title: knowledgeTitle,
+    })
+    setSavingKnowledge(false)
+    if (saved) {
+      setKnowledgeTitle('')
+      setKnowledgeBody('')
+      setKnowledgeSource('')
+    }
+  }
+
+  return <><PageIntro eyebrow="AYARLAR VE BAĞLANTILAR" title="Yetkiyi küçük ve görünür tut" detail="Her Gmail/Drive hesabı ayrı bağlanır. Sistem hangi hesabı taradığını, hangi kapsamı aldığını ve son taramayı açıkça gösterir." action={<div className="action-pair"><button className="button primary" onClick={() => void onConnect(false)}>Gmail hesabı bağla</button><button className="button secondary" onClick={() => void onConnect(true)}>Gmail + Drive bağla</button></div>} /><section className="panel settings-section"><div className="panel-head"><div><div className="eyebrow">E-POSTA VE DRIVE HESAPLARI</div><h3>4-5 hesap için bağlantı durumu</h3></div><span className={`pill evidence-${connected ? 'verified' : 'review'}`}>{connected} / 5 bağlı</span></div><div className="accounts-list">{accounts.length ? accounts.map((account) => { const hasDrive = account.scopes.includes('https://www.googleapis.com/auth/drive.readonly'); return <div className="account-row" key={account.id}><span className="connection-icon gmail">G</span><div><strong>{account.email}</strong><span>{account.provider} · {account.lastSync ? `son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'son tarama yok'}</span></div><span className="scope-empty">{hasDrive ? 'Gmail + Drive' : account.scopes.length ? 'Gmail okuma' : 'Kapsam verilmedi'}</span><span className={`pill evidence-${account.status === 'connected' ? 'verified' : 'review'}`}>{account.status === 'connected' ? 'Bağlı' : 'Yeniden yetkilendir'}</span></div> }) : <div className="empty-inline">Henüz hesap bağlı değil. Her hesabı ayrı ayrı ekle.</div>}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">GÜVENLİK TERCİHLERİ</div><h3>Kalıcı kurallar</h3><div className="setting-row"><div><strong>Otomatik ödeme</strong><span>Daima kapalı; yalnızca onaylı taslak</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>DigiD otomasyonu</strong><span>Kimlik bilgisi saklanmaz, manuel giriş gerekir</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>Hassas veri maskeleme</strong><span>Loglarda açık</span></div><span className="switch on">Açık</span></div><div className="setting-row"><div><strong>Resmi işlem gönderimi</strong><span>Avukat/kullanıcı onayı olmadan yok</span></div><span className="switch off">Kapalı</span></div></section><section className="panel"><div className="eyebrow">VERİ HAKLARI</div><h3>Kontrol sende</h3><p className="setting-copy">Veriyi dışa aktarma, bağlantıyı iptal etme ve tüm veriyi silme işlemleri ayrı, geri dönüşü açık adımlar olacak.</p><button className="button ghost" onClick={() => onNotice('Veri politikası uygulama öncesi hukuk ve güvenlik incelemesinde.')}>Veri politikası taslağı</button>{live && <button className="button secondary signout-button" onClick={() => void onSignOut()}>Bu oturumu kapat</button>}</section></div><section className="panel knowledge-panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ / MANUEL SKILL</div><h3>Yeni bilgi, yöntem veya kontrol kuralı ekle</h3></div><span className="pill evidence-review">{knowledge.length} kayıt</span></div><form className="knowledge-form" onSubmit={submitKnowledge}><label htmlFor="knowledge-category">Kategori</label><select id="knowledge-category" value={knowledgeCategory} onChange={(event) => setKnowledgeCategory(event.target.value as KnowledgeItem['category'])}>{Object.entries(knowledgeCategoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label htmlFor="knowledge-title">Başlık</label><input id="knowledge-title" required minLength={3} maxLength={160} value={knowledgeTitle} onChange={(event) => setKnowledgeTitle(event.target.value)} placeholder="Örn. CJIB itirazında önce ödeme yapma kontrolü" /><label htmlFor="knowledge-body">Bilgi / skill</label><textarea id="knowledge-body" required minLength={10} maxLength={5000} value={knowledgeBody} onChange={(event) => setKnowledgeBody(event.target.value)} placeholder="Kaynak, koşul, ne zaman uygulanır ve hangi kanıt gerekir?" /><label htmlFor="knowledge-source">Kaynak URL (opsiyonel)</label><input id="knowledge-source" type="url" maxLength={2048} value={knowledgeSource} onChange={(event) => setKnowledgeSource(event.target.value)} placeholder="https://..." /><button className="button primary" disabled={savingKnowledge}>{savingKnowledge ? 'Kaydediliyor…' : 'Bilgi bankasına kaydet'}</button></form>{knowledge.length > 0 && <div className="knowledge-preview">{knowledge.slice(0, 3).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p></div>)}</div>}</section>{live && <PasswordPanel onNotice={onNotice} />}</>
 }
 
 function Guardrail({ title, text }: { title: string; text: string }) {

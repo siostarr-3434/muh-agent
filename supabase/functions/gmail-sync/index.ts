@@ -50,6 +50,186 @@ function header(headers: Array<{ name?: string; value?: string }> | undefined, n
   return headers?.find((item) => item.name?.toLowerCase() === name)?.value ?? null
 }
 
+const dutchMonths: Record<string, number> = {
+  januari: 1,
+  februari: 2,
+  maart: 3,
+  april: 4,
+  mei: 5,
+  juni: 6,
+  juli: 7,
+  augustus: 8,
+  september: 9,
+  oktober: 10,
+  november: 11,
+  december: 12,
+}
+
+function compactText(...parts: Array<string | null | undefined>) {
+  return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+}
+
+function lowerText(value: string) {
+  return value.toLocaleLowerCase('nl-NL')
+}
+
+function emailDomain(value: string | null) {
+  const match = value?.match(/@([a-z0-9.-]+\.[a-z]{2,})/i)
+  return match?.[1]?.toLowerCase() ?? ''
+}
+
+function parseDutchAmount(value: string) {
+  const normalized = value.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')
+  const amount = Number(normalized)
+  return Number.isFinite(amount) && amount >= 0 ? Number(amount.toFixed(2)) : null
+}
+
+function extractAmount(text: string) {
+  const prefix = text.match(/(?:€|eur)\s*([0-9][0-9.\s]*(?:[,.][0-9]{2})?)/i)
+  if (prefix?.[1]) return parseDutchAmount(prefix[1])
+  const suffix = text.match(/([0-9][0-9.\s]*(?:[,.][0-9]{2})?)\s*(?:euro|eur)\b/i)
+  return suffix?.[1] ? parseDutchAmount(suffix[1]) : null
+}
+
+function isoDate(year: number, month: number, day: number) {
+  const candidate = new Date(Date.UTC(year, month - 1, day, 12))
+  if (candidate.getUTCFullYear() !== year || candidate.getUTCMonth() !== month - 1 || candidate.getUTCDate() !== day) return null
+  return candidate.toISOString().slice(0, 10)
+}
+
+function extractDueDate(text: string) {
+  const numeric = text.match(/\b([0-3]?\d)[-/.]([01]?\d)[-/.](20\d{2})\b/)
+  if (numeric?.[1] && numeric[2] && numeric[3]) return isoDate(Number(numeric[3]), Number(numeric[2]), Number(numeric[1]))
+
+  const monthNames = Object.keys(dutchMonths).join('|')
+  const named = text.match(new RegExp(`\\b([0-3]?\\d)\\s+(${monthNames})\\s+(20\\d{2})\\b`, 'i'))
+  if (named?.[1] && named[2] && named[3]) return isoDate(Number(named[3]), dutchMonths[lowerText(named[2])], Number(named[1]))
+  return null
+}
+
+function daysUntil(date: string | null) {
+  if (!date) return null
+  const today = new Date()
+  today.setUTCHours(12, 0, 0, 0)
+  const target = new Date(`${date}T12:00:00.000Z`)
+  return Math.ceil((target.getTime() - today.getTime()) / 86_400_000)
+}
+
+function classifyAuthority(domain: string, text: string) {
+  const checks: Array<{ authority: string; tags: string[]; matches: string[] }> = [
+    { authority: 'IND', tags: ['immigration', 'ind'], matches: ['ind.nl', 'immigratie', 'naturalisatie', 'kennismigrant', 'verblijfsvergunning', 'erkend referent'] },
+    { authority: 'CJIB', tags: ['fine', 'cjib'], matches: ['cjib.nl', 'cjib', 'boete', 'bekeuring', 'verkeersboete'] },
+    { authority: 'Belastingdienst', tags: ['tax'], matches: ['belastingdienst.nl', 'belastingdienst', 'aanslag', 'toeslag', 'inkomstenbelasting', 'btw'] },
+    { authority: 'Gemeente Waterland', tags: ['municipality'], matches: ['waterland.nl', 'gemeente waterland', 'broek in waterland', 'gemeentebelasting'] },
+    { authority: 'Rechtspraak', tags: ['court'], matches: ['rechtspraak.nl', 'rechtbank', 'zitting', 'uitspraak', 'beroep'] },
+    { authority: 'Openbaar Ministerie', tags: ['justice'], matches: ['om.nl', 'openbaar ministerie', 'officier van justitie'] },
+    { authority: 'Politie', tags: ['police'], matches: ['politie.nl', 'politie'] },
+    { authority: 'UWV', tags: ['work', 'pregnancy'], matches: ['uwv.nl', 'zwangerschapsverlof', 'wazo', 'ziektewet'] },
+    { authority: 'SVB', tags: ['family'], matches: ['svb.nl', 'kinderbijslag'] },
+    { authority: 'MijnOverheid', tags: ['government'], matches: ['mijnoverheid.nl', 'berichtenbox', 'mijn overheid'] },
+    { authority: 'DigiD', tags: ['digid'], matches: ['digid.nl', 'digid'] },
+  ]
+  for (const check of checks) {
+    if (check.matches.some((match) => domain.endsWith(match) || text.includes(match))) return check
+  }
+  return { authority: domain ? domain : 'Bilinmeyen kaynak', tags: [] }
+}
+
+function classifyCategory(text: string, authority: string) {
+  if (authority === 'CJIB' || /\b(boete|bekeuring|verkeersboete|sanctie)\b/i.test(text)) return 'fine'
+  if (authority === 'Belastingdienst' || /\b(aanslag|belasting|toeslag|btw|inkomstenbelasting)\b/i.test(text)) return 'tax'
+  if (/\b(zorgverzekering|premie|eigen risico|polis|kraamzorg)\b/i.test(text)) return 'insurance'
+  if (/\b(factuur|betaling|betaal|incasso|te betalen|openstaand)\b/i.test(text)) return 'invoice'
+  return 'other'
+}
+
+function classifyMessage(accountEmail: string, fromAddress: string | null, subject: string | null, snippet: string | null) {
+  const raw = compactText(fromAddress, subject, snippet)
+  const text = lowerText(raw)
+  const domain = emailDomain(fromAddress)
+  const authority = classifyAuthority(domain, text)
+  const amount = extractAmount(raw)
+  const dueDate = extractDueDate(raw)
+  const category = classifyCategory(text, authority.authority)
+  const hasDeadlineLanguage = /\b(uiterlijk|deadline|voor\s+\d|binnen|termijn|bezwaar|beroep|aanleveren|documenten)\b/i.test(raw)
+  const hasPaymentLanguage = /\b(betalen|betaling|incasso|factuur|openstaand|te betalen|aanmaning)\b/i.test(raw)
+  const legalTags = ['immigration', 'ind', 'fine', 'court', 'justice', 'police']
+  const relevant = authority.tags.length > 0 || amount !== null || dueDate !== null || hasDeadlineLanguage || hasPaymentLanguage
+  const urgent = authority.tags.some((tag) => legalTags.includes(tag)) || (daysUntil(dueDate) ?? 99) <= 7
+  const severity = urgent ? 'critical' : relevant ? 'warning' : 'info'
+  const tags = Array.from(new Set([...authority.tags, category].filter((tag) => tag !== 'other')))
+  const title = subject?.trim() || `${authority.authority} bericht`
+
+  return {
+    amount,
+    authority: authority.authority,
+    category,
+    classification: relevant ? tags.join(',') || category : 'general',
+    dueDate,
+    hasDeadlineLanguage,
+    hasPaymentLanguage,
+    notificationBody: compactText(
+      `Bron: ${accountEmail}`,
+      amount !== null ? `Bedrag: €${amount.toFixed(2)}` : null,
+      dueDate ? `Datum: ${dueDate}` : null,
+      snippet?.slice(0, 180),
+    ),
+    relevant,
+    severity,
+    tags,
+    title,
+  }
+}
+
+async function existingRow(admin: ReturnType<typeof adminClient>, table: 'notifications' | 'obligations' | 'deadlines', userId: string, sourceRef: string) {
+  const { data, error } = await admin.from(table).select('id').eq('user_id', userId).eq('source_url', sourceRef).limit(1)
+  if (error) throw new Error(`${table}_query_failed`)
+  return (data ?? []).length > 0
+}
+
+async function persistTriage(admin: ReturnType<typeof adminClient>, account: { id: string; user_id: string; email: string }, sourceRef: string, triage: ReturnType<typeof classifyMessage>) {
+  if (!triage.relevant) return
+  if (!await existingRow(admin, 'notifications', account.user_id, sourceRef)) {
+    const { error } = await admin.from('notifications').insert({
+      body: triage.notificationBody,
+      severity: triage.severity,
+      source_url: sourceRef,
+      title: triage.title,
+      user_id: account.user_id,
+    })
+    if (error) throw new Error('notification_save_failed')
+  }
+
+  if ((triage.category !== 'other' || triage.amount !== null) && !await existingRow(admin, 'obligations', account.user_id, sourceRef)) {
+    const { error } = await admin.from('obligations').insert({
+      amount: triage.amount,
+      authority: triage.authority,
+      category: triage.category,
+      due_date: triage.dueDate,
+      evidence_level: 'review',
+      note: `Gmail hesabı: ${account.email}. Resmi belge ve ödeme kanalı ayrıca doğrulanmalı.`,
+      source_url: sourceRef,
+      status: 'open',
+      title: triage.title,
+      user_id: account.user_id,
+    })
+    if (error) throw new Error('obligation_save_failed')
+  }
+
+  if ((triage.dueDate || triage.hasDeadlineLanguage) && triage.dueDate && !await existingRow(admin, 'deadlines', account.user_id, sourceRef)) {
+    const { error } = await admin.from('deadlines').insert({
+      due_at: `${triage.dueDate}T12:00:00.000Z`,
+      evidence_level: 'review',
+      owner: triage.authority,
+      source_url: sourceRef,
+      status: 'open',
+      title: triage.title,
+      user_id: account.user_id,
+    })
+    if (error) throw new Error('deadline_save_failed')
+  }
+}
+
 async function syncAccount(admin: ReturnType<typeof adminClient>, account: { id: string; user_id: string; email: string }) {
   const { data: token } = await admin.from('email_tokens').select('refresh_token_ciphertext').eq('account_id', account.id).single()
   if (!token) throw new Error('token_missing')
@@ -59,21 +239,40 @@ async function syncAccount(admin: ReturnType<typeof adminClient>, account: { id:
 
   for (const message of list.messages ?? []) {
     const detail = await gmailJson(`messages/${encodeURIComponent(message.id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, accessToken) as { id?: string; threadId?: string; snippet?: string; internalDate?: string; labelIds?: string[]; payload?: { headers?: Array<{ name?: string; value?: string }> } }
+    const providerMessageId = detail.id ?? message.id
+    const fromAddress = header(detail.payload?.headers, 'From')
+    const subject = header(detail.payload?.headers, 'Subject')
+    const triage = classifyMessage(account.email, fromAddress, subject, detail.snippet ?? null)
+    const sourceRef = `gmail://${account.id}/${providerMessageId}`
     const { data: saved, error } = await admin.from('email_messages').upsert({
       user_id: account.user_id,
       account_id: account.id,
-      provider_message_id: detail.id ?? message.id,
+      provider_message_id: providerMessageId,
       thread_id: detail.threadId ?? message.threadId ?? null,
-      from_address: header(detail.payload?.headers, 'From'),
-      subject: header(detail.payload?.headers, 'Subject'),
+      from_address: fromAddress,
+      subject,
       received_at: detail.internalDate ? new Date(Number(detail.internalDate)).toISOString() : null,
       snippet: detail.snippet ?? null,
       label_ids: detail.labelIds ?? [],
       sensitivity: 'restricted',
-      processing_status: 'queued',
-    }, { onConflict: 'account_id,provider_message_id', ignoreDuplicates: true }).select('id')
+      classification: triage.classification,
+      extracted_data: {
+        account_email: account.email,
+        amount: triage.amount,
+        authority: triage.authority,
+        category: triage.category,
+        due_date: triage.dueDate,
+        source_ref: sourceRef,
+        tags: triage.tags,
+      },
+      processing_status: triage.relevant ? 'review_required' : 'processed',
+    }, { onConflict: 'account_id,provider_message_id' }).select('id')
     if (error) throw new Error('message_save_failed')
-    if ((saved ?? []).length > 0) imported += 1
+    const savedId = (saved ?? [])[0]?.id
+    if (savedId) {
+      await persistTriage(admin, account, sourceRef, triage)
+      imported += 1
+    }
   }
 
   await admin.from('email_accounts').update({ status: 'connected', last_sync_at: new Date().toISOString(), last_error_code: null }).eq('id', account.id)

@@ -63,6 +63,7 @@ test('server auth uses password login and no magic-link route', async () => {
   assert.match(api, /\/api\/auth\/sign-in/)
   assert.match(api, /\/api\/auth\/password/)
   assert.match(api, /\/api\/auth\/recover-password/)
+  assert.match(api, /\/api\/knowledge/)
   assert.match(api, /signInWithPassword/)
   assert.match(api, /resetPasswordForEmail/)
   assert.match(api, /updateUser/)

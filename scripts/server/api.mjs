@@ -4,6 +4,7 @@ import { createResponseState, readJson, requireSameOrigin, writeJson, writeMetho
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const passwordMaximumLength = 128
 const passwordMinimumLength = 12
+const knowledgeCategories = new Set(['immigration', 'pregnancy', 'fine', 'tax', 'municipality', 'health', 'skill', 'other'])
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const requestWindows = new Map()
 
@@ -45,6 +46,22 @@ function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
+function normalizeLimitedText(value, maximumLength) {
+  return typeof value === 'string' ? value.trim().slice(0, maximumLength) : ''
+}
+
+function normalizeOptionalUrl(value) {
+  const text = normalizeLimitedText(value, 2_048)
+  if (!text) return null
+  try {
+    const url = new URL(text)
+    if (!['https:', 'http:'].includes(url.protocol)) return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 function validPassword(value) {
   return typeof value === 'string' && value.length >= passwordMinimumLength && value.length <= passwordMaximumLength
 }
@@ -80,16 +97,20 @@ async function dashboard(request, response, config) {
   if (!context) return true
   const userId = context.user.id
 
-  const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesResult, documentsResult] = await Promise.all([
+  const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, messagesResult, notificationsResult, sourcesResult, knowledgeResult] = await Promise.all([
     context.client.from('obligations').select('id,authority,title,category,amount,currency,due_date,status,evidence_level,source_url,note').eq('user_id', userId).order('due_date', { ascending: true }),
     context.client.from('deadlines').select('id,title,owner,due_at,status,evidence_level,source_url').eq('user_id', userId).order('due_at', { ascending: true }),
     context.client.from('approvals').select('id,action_type,risk,payload,status,expires_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(100),
     context.client.from('email_accounts').select('id,provider,email,label,status,scopes,last_sync_at,last_error_code').eq('user_id', userId).order('created_at', { ascending: true }),
     context.client.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+    context.client.from('email_messages').select('id,account_id,provider_message_id,from_address,subject,received_at,snippet,classification,extracted_data,processing_status').eq('user_id', userId).order('received_at', { ascending: false, nullsFirst: false }).limit(50),
+    context.client.from('notifications').select('id,severity,title,body,source_url,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(25),
+    context.client.from('source_catalog').select('id,name,domain,purpose,trust,enabled_by_default').order('id', { ascending: true }),
+    context.client.from('knowledge_items').select('id,category,title,body,source_url,evidence_level,created_at').eq('user_id', userId).eq('status', 'active').order('created_at', { ascending: false }).limit(100),
   ])
 
-  const failed = [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesResult, documentsResult].some((result) => result.error)
+  const failed = [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, messagesResult, notificationsResult, sourcesResult, knowledgeResult].some((result) => result.error)
   if (failed) {
     console.error('dashboard_query_failed')
     writeJson(response, 502, { error: 'dashboard_unavailable' }, context.state)
@@ -99,10 +120,59 @@ async function dashboard(request, response, config) {
   writeJson(response, 200, {
     accounts: accountsResult.data ?? [],
     approvals: (approvalsResult.data ?? []).map(normalizeApproval),
-    counts: { documents: documentsResult.count ?? 0, messages: messagesResult.count ?? 0 },
+    counts: { documents: documentsResult.count ?? 0, messages: messagesCountResult.count ?? 0 },
     deadlines: deadlinesResult.data ?? [],
+    knowledgeItems: knowledgeResult.data ?? [],
+    messages: messagesResult.data ?? [],
+    notifications: notificationsResult.data ?? [],
     obligations: obligationsResult.data ?? [],
+    sources: sourcesResult.data ?? [],
   }, context.state)
+  return true
+}
+
+async function createKnowledge(request, response, config) {
+  const state = createResponseState()
+  if (!method(request, response, ['POST'], state)) return true
+  if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
+  if (!withinRateLimit(request, 'knowledge-create', 12)) {
+    writeJson(response, 429, { error: 'rate_limited' }, state, { 'Retry-After': '60' })
+    return true
+  }
+
+  const context = await authenticated(request, response, config)
+  if (!context) return true
+  const body = await readJson(request)
+  const category = typeof body?.category === 'string' && knowledgeCategories.has(body.category) ? body.category : 'other'
+  const title = normalizeLimitedText(body?.title, 160)
+  const note = normalizeLimitedText(body?.body, 5_000)
+  const sourceUrl = body?.sourceUrl === undefined || body?.sourceUrl === '' ? null : normalizeOptionalUrl(body.sourceUrl)
+
+  if (title.length < 3 || note.length < 10 || (body?.sourceUrl && !sourceUrl)) {
+    writeJson(response, 400, { error: 'invalid_knowledge_item' }, context.state)
+    return true
+  }
+
+  const { data, error } = await context.client
+    .from('knowledge_items')
+    .insert({
+      body: note,
+      category,
+      evidence_level: 'review',
+      source_url: sourceUrl,
+      title,
+      user_id: context.user.id,
+    })
+    .select('id,category,title,body,source_url,evidence_level,created_at')
+    .single()
+
+  if (error || !data) {
+    console.error('knowledge_save_failed')
+    writeJson(response, 502, { error: 'knowledge_save_failed' }, context.state)
+    return true
+  }
+
+  writeJson(response, 201, { item: data }, context.state)
   return true
 }
 
@@ -326,6 +396,7 @@ export async function handleApplicationRoute(request, response, config, path) {
     if (path === '/api/auth/signout') return await signOut(request, response, config)
     if (path === '/api/dashboard') return await dashboard(request, response, config)
     if (path === '/api/gmail/connect') return await gmailConnect(request, response, config)
+    if (path === '/api/knowledge') return await createKnowledge(request, response, config)
     if (path === '/auth/callback') return await authCallback(request, response, config)
     const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)\/decision$/)
     if (approvalMatch) return await approvalDecision(request, response, config, approvalMatch[1])

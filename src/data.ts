@@ -93,7 +93,7 @@ export const approvals: ApprovalItem[] = [
   {
     id: 'approval-gmail',
     title: 'Gmail bağlantısını başlat',
-    description: 'Sadece Gmail okuma ve profil e-postası kapsamları istenecek.',
+    description: 'Gmail okuma varsayılan; Drive izni sadece ayrı butonla istenecek.',
     action: 'connect',
     status: 'pending',
     risk: 'medium',
@@ -114,6 +114,13 @@ export const sources: SourceRecord[] = [
   { id: 'waterland', name: 'Gemeente Waterland', domain: 'waterland.nl', purpose: 'Yerel vergi, adres ve belediye hizmetleri', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
   { id: 'rechtspraak', name: 'Rechtspraak', domain: 'rechtspraak.nl', purpose: 'Mahkeme ve usul bilgileri', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
   { id: 'rijksoverheid', name: 'Rijksoverheid', domain: 'rijksoverheid.nl', purpose: 'Yasa, hak ve devlet duyuruları', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'mijnoverheid', name: 'MijnOverheid', domain: 'mijnoverheid.nl', purpose: 'Berichtenbox ve resmi devlet mesajları', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'digid', name: 'DigiD', domain: 'digid.nl', purpose: 'Kimlik doğrulama kapısı; şifre saklanmaz', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'uwv', name: 'UWV', domain: 'uwv.nl', purpose: 'İş, izin ve doğum/ebeveyn süreçleri', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'svb', name: 'SVB', domain: 'svb.nl', purpose: 'Kinderbijslag ve aile yardımları', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'rdw', name: 'RDW', domain: 'rdw.nl', purpose: 'Araç, ehliyet ve kayıt bağlantılı bilgiler', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'politie', name: 'Politie', domain: 'politie.nl', purpose: 'Polis duyuruları ve resmi başvuru kanalları', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
+  { id: 'om', name: 'Openbaar Ministerie', domain: 'om.nl', purpose: 'Savcılık, ceza ve itiraz süreçleri', lastChecked: 'Henüz bağlanmadı', enabled: true, trust: 'official' },
 ]
 
 export const activities: Activity[] = [

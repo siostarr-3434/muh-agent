@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 
+async function readMigrationsSql() {
+  const migrationsDirectory = resolve(root, 'supabase/migrations')
+  const files = (await readdir(migrationsDirectory)).filter((file) => file.endsWith('.sql')).sort()
+  return (await Promise.all(files.map((file) => readFile(resolve(migrationsDirectory, file), 'utf8')))).join('\n')
+}
+
 test('database policies are authenticated and approval execution is server-only', async () => {
-  const sql = await readFile(resolve(root, 'supabase/migrations/0001_core.sql'), 'utf8')
+  const sql = await readMigrationsSql()
   const policies = sql.match(/create policy[\s\S]*?;/gi) ?? []
 
   assert.ok(policies.length > 0, 'RLS policies are missing')

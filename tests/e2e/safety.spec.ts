@@ -7,6 +7,13 @@ const officialHosts = new Set([
   'waterland.nl',
   'rechtspraak.nl',
   'rijksoverheid.nl',
+  'mijnoverheid.nl',
+  'digid.nl',
+  'uwv.nl',
+  'svb.nl',
+  'rdw.nl',
+  'politie.nl',
+  'om.nl',
 ])
 
 test('health endpoint and browser responses have security headers', async ({ request }) => {
