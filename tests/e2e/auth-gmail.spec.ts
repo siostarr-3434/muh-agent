@@ -30,9 +30,14 @@ async function mockSession(page: Page, authenticated: boolean) {
 
 test('opens the dashboard without sending a login email', async ({ page }) => {
   let passwordSignInRequests = 0
+  let passwordRecoveryRequests = 0
   await page.route('**/api/auth/sign-in', (route) => {
     passwordSignInRequests += 1
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ signedIn: true }) })
+  })
+  await page.route('**/api/auth/recover-password', (route) => {
+    passwordRecoveryRequests += 1
+    return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ accepted: true }) })
   })
   await mockSession(page, false)
 
@@ -50,6 +55,7 @@ test('opens the dashboard without sending a login email', async ({ page }) => {
   await expect(loginPanel.getByLabel('Şifre')).toBeVisible()
   await expect(loginPanel.getByText('e-posta veya kod gönderilmez')).toBeVisible()
   expect(passwordSignInRequests).toBe(0)
+  expect(passwordRecoveryRequests).toBe(0)
 })
 
 test('signs in with password only after an explicit dashboard form submit', async ({ page }) => {
@@ -72,6 +78,29 @@ test('signs in with password only after an explicit dashboard form submit', asyn
     loginPanel.getByRole('button', { name: 'Giriş yap' }).click(),
   ])
   expect(passwordSignInRequests).toBe(1)
+})
+
+test('requests a legacy password setup link only after explicit click', async ({ page }) => {
+  let passwordRecoveryRequests = 0
+  await page.route('**/api/auth/recover-password', async (route) => {
+    passwordRecoveryRequests += 1
+    const body = route.request().postDataJSON() as { email?: string }
+    expect(body).toEqual({ email: 'siostarr@hairartclinics.com' })
+    return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ accepted: true }) })
+  })
+  await mockSession(page, false)
+
+  await page.goto('/')
+  await page.getByTestId('open-login').click()
+  const loginPanel = page.getByTestId('login-panel')
+  await loginPanel.getByLabel('E-posta adresi').fill('siostarr@hairartclinics.com')
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes('/api/auth/recover-password') && request.method() === 'POST'),
+    loginPanel.getByRole('button', { name: 'İlk şifre bağlantısı gönder' }).click(),
+  ])
+
+  await expect(loginPanel.getByRole('status')).toContainText('şifre belirleme bağlantısı gönderildi')
+  expect(passwordRecoveryRequests).toBe(1)
 })
 
 test('asks for dashboard login before starting Gmail OAuth', async ({ page }) => {
@@ -130,4 +159,13 @@ test('shows the safe Gmail callback diagnostic code to the user', async ({ page 
   await page.goto('/?view=settings&gmail=failed&gmail_error=google_client_invalid')
 
   await expect(page.getByRole('status')).toContainText('OAuth istemci kimliği')
+})
+
+test('opens settings password panel after recovery callback', async ({ page }) => {
+  await mockSession(page, true)
+
+  await page.goto('/?view=settings&password=recovery')
+
+  await expect(page.getByRole('status')).toContainText('Şifre belirleme oturumu açıldı')
+  await expect(page.getByRole('heading', { name: 'Oturum şifresi belirle' })).toBeVisible()
 })

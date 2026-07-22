@@ -82,6 +82,13 @@ export function signIn(email: string, password: string) {
   })
 }
 
+export function requestPasswordRecovery(email: string) {
+  return request<{ accepted: true }>('/api/auth/recover-password', {
+    body: JSON.stringify({ email }),
+    method: 'POST',
+  })
+}
+
 export function setPassword(password: string) {
   return request<{ passwordUpdated: true }>('/api/auth/password', {
     body: JSON.stringify({ password }),

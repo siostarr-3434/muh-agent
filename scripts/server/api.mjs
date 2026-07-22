@@ -1,5 +1,5 @@
 import { createSupabaseRequestClient } from './supabase.mjs'
-import { createResponseState, readJson, requireSameOrigin, writeJson, writeMethodNotAllowed } from './http.mjs'
+import { createResponseState, readJson, requireSameOrigin, writeJson, writeMethodNotAllowed, writeRedirect } from './http.mjs'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const passwordMaximumLength = 128
@@ -136,6 +136,32 @@ async function passwordSignIn(request, response, config) {
   return true
 }
 
+async function requestPasswordRecovery(request, response, config) {
+  const state = createResponseState()
+  if (!method(request, response, ['POST'], state)) return true
+  if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
+  if (!withinRateLimit(request, 'auth-password-recovery')) {
+    writeJson(response, 429, { error: 'rate_limited' }, state, { 'Retry-After': '60' })
+    return true
+  }
+
+  const body = await readJson(request)
+  const email = normalizeEmail(body?.email)
+  if (email.length > 254 || !emailPattern.test(email)) {
+    writeJson(response, 400, { error: 'invalid_email' }, state)
+    return true
+  }
+
+  const context = createSupabaseRequestClient(request, config)
+  const { error } = await context.client.auth.resetPasswordForEmail(email, {
+    redirectTo: `${config.appOrigin}/auth/callback`,
+  })
+  if (error) console.error('password_recovery_request_failed')
+  // Identical accepted response prevents account enumeration.
+  writeJson(response, 202, { accepted: true }, context.state)
+  return true
+}
+
 async function setPassword(request, response, config) {
   const state = createResponseState()
   if (!method(request, response, ['POST'], state)) return true
@@ -165,6 +191,27 @@ async function setPassword(request, response, config) {
     return true
   }
   writeJson(response, 200, { passwordUpdated: true }, context.state)
+  return true
+}
+
+async function authCallback(request, response, config) {
+  const state = createResponseState()
+  if (!method(request, response, ['GET'], state)) return true
+  if (!liveOnly(response, config, state)) return true
+  const url = new URL(request.url ?? '/auth/callback', config.appOrigin)
+  const code = url.searchParams.get('code')
+  if (!code || code.length > 2_048 || url.searchParams.has('error')) {
+    writeRedirect(response, `${config.appOrigin}/?view=settings&password=recovery_failed`, state)
+    return true
+  }
+
+  const context = createSupabaseRequestClient(request, config)
+  const { error } = await context.client.auth.exchangeCodeForSession(code)
+  writeRedirect(
+    response,
+    `${config.appOrigin}/?view=settings&password=${error ? 'recovery_failed' : 'recovery'}`,
+    context.state,
+  )
   return true
 }
 
@@ -274,14 +321,12 @@ export async function handleApplicationRoute(request, response, config, path) {
   try {
     if (path === '/api/session') return await session(request, response, config)
     if (path === '/api/auth/sign-in') return await passwordSignIn(request, response, config)
+    if (path === '/api/auth/recover-password') return await requestPasswordRecovery(request, response, config)
     if (path === '/api/auth/password') return await setPassword(request, response, config)
     if (path === '/api/auth/signout') return await signOut(request, response, config)
     if (path === '/api/dashboard') return await dashboard(request, response, config)
     if (path === '/api/gmail/connect') return await gmailConnect(request, response, config)
-    if (path === '/auth/callback') {
-      writeJson(response, 410, { error: 'password_login_only' }, createResponseState())
-      return true
-    }
+    if (path === '/auth/callback') return await authCallback(request, response, config)
     const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)\/decision$/)
     if (approvalMatch) return await approvalDecision(request, response, config, approvalMatch[1])
     if (path.startsWith('/api/') || path === '/auth') {

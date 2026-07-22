@@ -81,4 +81,5 @@ test('browser code has no direct Supabase client or token storage', async () => 
   assert.match(api, /credentials:\s*'same-origin'/)
   assert.match(api, /\/api\/auth\/sign-in/)
   assert.match(api, /\/api\/auth\/password/)
+  assert.match(api, /\/api\/auth\/recover-password/)
 })

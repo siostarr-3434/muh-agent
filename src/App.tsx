@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ApiError, beginGmailConnection, decideApproval, getDashboard, getSession, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
+import { ApiError, beginGmailConnection, decideApproval, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
 import type { ApprovalItem, Deadline, EvidenceLevel, MailAccount, Obligation, ObligationStatus, ViewId } from './types'
 
@@ -54,6 +54,8 @@ function initialView(): ViewId {
 
 function initialNotice() {
   const query = new URLSearchParams(window.location.search)
+  if (query.get('password') === 'recovery') return 'Şifre belirleme oturumu açıldı. Ayarlar bölümünden yeni şifreni kaydet.'
+  if (query.get('password') === 'recovery_failed') return 'Şifre belirleme bağlantısı doğrulanamadı. Yeni bağlantı iste.'
   if (query.get('gmail') === 'connected') return 'Gmail hesabı bağlandı; ilk güvenli senkronizasyon hazırlanıyor.'
   if (query.get('gmail') === 'cancelled') return 'Google izin ekranı kapatıldı; hiçbir Gmail hesabı bağlanmadı.'
   if (query.get('gmail') === 'expired') return 'Gmail bağlantı oturumu sona erdi. Bağlantıyı yeniden başlatın.'
@@ -352,6 +354,7 @@ function LoginPanel({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
   const [password, setPasswordValue] = useState('')
   const [status, setStatus] = useState<'idle' | 'submitting' | 'error'>('idle')
+  const [recoveryStatus, setRecoveryStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -364,7 +367,21 @@ function LoginPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return <section className="login-panel panel" data-testid="login-panel" aria-labelledby="dashboard-login-title"><div className="login-panel-head"><div><div className="eyebrow">DASHBOARD OTURUMU</div><h2 id="dashboard-login-title">Dashboard’dan giriş yap</h2><p>Giriş yalnızca e-posta ve şifreyle yapılır; bu ekrandan e-posta veya kod gönderilmez.</p></div><button type="button" className="button ghost" onClick={onClose}>Kapat</button></div><form className="auth-form" onSubmit={submit}><label htmlFor="login-email">E-posta adresi</label><input id="login-email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /><label htmlFor="login-password">Şifre</label><input id="login-password" type="password" autoComplete="current-password" required minLength={12} maxLength={128} value={password} onChange={(event) => setPasswordValue(event.target.value)} /><button className="button primary" disabled={status === 'submitting'}>{status === 'submitting' ? 'Giriş yapılıyor…' : 'Giriş yap'}</button></form>{status === 'error' && <div className="auth-notice error" role="alert">E-posta veya şifre doğru değil. İlk şifreni mevcut açık oturumdan Ayarlar bölümünde belirleyebilirsin.</div>}<small>Oturum jetonları JavaScript'e açılmaz; yalnızca HttpOnly çerezde tutulur.</small></section>
+  const requestRecovery = async () => {
+    if (!email.trim()) {
+      setRecoveryStatus('error')
+      return
+    }
+    setRecoveryStatus('sending')
+    try {
+      await requestPasswordRecovery(email)
+      setRecoveryStatus('sent')
+    } catch {
+      setRecoveryStatus('error')
+    }
+  }
+
+  return <section className="login-panel panel" data-testid="login-panel" aria-labelledby="dashboard-login-title"><div className="login-panel-head"><div><div className="eyebrow">DASHBOARD OTURUMU</div><h2 id="dashboard-login-title">Dashboard’dan giriş yap</h2><p>Giriş yalnızca e-posta ve şifreyle yapılır; normal girişte e-posta veya kod gönderilmez.</p></div><button type="button" className="button ghost" onClick={onClose}>Kapat</button></div><form className="auth-form" onSubmit={submit}><label htmlFor="login-email">E-posta adresi</label><input id="login-email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /><label htmlFor="login-password">Şifre</label><input id="login-password" type="password" autoComplete="current-password" required minLength={12} maxLength={128} value={password} onChange={(event) => setPasswordValue(event.target.value)} /><button className="button primary" disabled={status === 'submitting'}>{status === 'submitting' ? 'Giriş yapılıyor…' : 'Giriş yap'}</button><button type="button" className="button ghost" disabled={recoveryStatus === 'sending'} onClick={() => void requestRecovery()}>{recoveryStatus === 'sending' ? 'Bağlantı hazırlanıyor…' : 'İlk şifre bağlantısı gönder'}</button></form>{status === 'error' && <div className="auth-notice error" role="alert">E-posta veya şifre doğru değil. Bu hesap eski magic-link hesabıysa “İlk şifre bağlantısı gönder” düğmesini kullan.</div>}{recoveryStatus === 'sent' && <div className="auth-notice" role="status">Adres sistemde kayıtlıysa şifre belirleme bağlantısı gönderildi. Linke basınca Ayarlar bölümünden yeni şifreni kaydet.</div>}{recoveryStatus === 'error' && <div className="auth-notice error" role="alert">Şifre belirleme bağlantısı istenemedi. E-posta adresini kontrol et ve tekrar dene.</div>}<small>Oturum jetonları JavaScript'e açılmaz; yalnızca HttpOnly çerezde tutulur.</small></section>
 }
 
 function PasswordPanel({ onNotice }: { onNotice: (message: string) => void }) {
