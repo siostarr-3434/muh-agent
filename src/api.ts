@@ -75,9 +75,16 @@ export function getDashboard() {
   return request<DashboardResponse>('/api/dashboard')
 }
 
-export function requestMagicLink(email: string) {
-  return request<{ accepted: true }>('/api/auth/request-link', {
-    body: JSON.stringify({ email }),
+export function signIn(email: string, password: string) {
+  return request<{ signedIn: true }>('/api/auth/sign-in', {
+    body: JSON.stringify({ email, password }),
+    method: 'POST',
+  })
+}
+
+export function setPassword(password: string) {
+  return request<{ passwordUpdated: true }>('/api/auth/password', {
+    body: JSON.stringify({ password }),
     method: 'POST',
   })
 }

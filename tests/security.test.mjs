@@ -35,8 +35,14 @@ test('OAuth state consumption is single-use and race resistant', async () => {
   const callback = await readFile(resolve(root, 'supabase/functions/gmail-oauth-callback/index.ts'), 'utf8')
   assert.match(callback, /\.is\('consumed_at', null\)/)
   assert.match(callback, /\.gt\('expires_at'/)
-  assert.match(callback, /\.select\([^)]*\)\.single\(\)/)
+  assert.match(callback, /\.select\([^)]*\)[\s\S]*?\.single\(\)/)
   assert.match(callback, /\.rpc\('connect_gmail_account'/)
+  assert.match(callback, /tokens\.refresh_token/)
+  assert.match(callback, /google_refresh_token_missing/)
+  assert.match(callback, /scopeGranted/)
+  assert.match(callback, /userinfo\.email/)
+  assert.match(callback, /gmail_error/)
+  assert.match(callback, /gmail_oauth_callback_failed/)
 })
 
 test('Gmail OAuth start validates configuration before creating an OAuth state', async () => {
@@ -46,6 +52,11 @@ test('Gmail OAuth start validates configuration before creating an OAuth state',
 
   assert.ok(configIndex >= 0, 'OAuth configuration must be validated explicitly')
   assert.ok(stateInsertIndex > configIndex, 'OAuth state must not be created before configuration validation')
+  assert.match(start, /GOOGLE_CLIENT_SECRET/)
+  assert.match(start, /TOKEN_ENCRYPTION_KEY/)
+  assert.match(start, /validateEncryptionKey/)
+  assert.match(start, /\.eq\('provider', 'gmail'\)/)
+  assert.match(start, /\.is\('consumed_at', null\)/)
   assert.match(start, /oauth_not_configured/)
 })
 
@@ -65,6 +76,9 @@ test('browser code has no direct Supabase client or token storage', async () => 
 
   assert.doesNotMatch(browserCode, /localStorage|sessionStorage/)
   assert.doesNotMatch(browserCode, /@supabase\/(supabase-js|ssr)/)
+  assert.doesNotMatch(browserCode, /requestMagicLink|request-link|signInWithOtp/)
   assert.doesNotMatch(build, /PUBLIC_SUPABASE|SUPABASE_PUBLISHABLE_KEY/)
   assert.match(api, /credentials:\s*'same-origin'/)
+  assert.match(api, /\/api\/auth\/sign-in/)
+  assert.match(api, /\/api\/auth\/password/)
 })

@@ -1,7 +1,9 @@
 import { createSupabaseRequestClient } from './supabase.mjs'
-import { createResponseState, readJson, requireSameOrigin, writeJson, writeMethodNotAllowed, writeRedirect } from './http.mjs'
+import { createResponseState, readJson, requireSameOrigin, writeJson, writeMethodNotAllowed } from './http.mjs'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const passwordMaximumLength = 128
+const passwordMinimumLength = 12
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const requestWindows = new Map()
 
@@ -37,6 +39,14 @@ function withinRateLimit(request, key, limit = 5, windowMs = 60_000) {
     }
   }
   return true
+}
+
+function normalizeEmail(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function validPassword(value) {
+  return typeof value === 'string' && value.length >= passwordMinimumLength && value.length <= passwordMaximumLength
 }
 
 async function authenticated(request, response, config) {
@@ -96,49 +106,65 @@ async function dashboard(request, response, config) {
   return true
 }
 
-async function requestLink(request, response, config) {
+async function passwordSignIn(request, response, config) {
   const state = createResponseState()
   if (!method(request, response, ['POST'], state)) return true
   if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
-  if (!withinRateLimit(request, 'auth-link')) {
+  if (!withinRateLimit(request, 'auth-password')) {
     writeJson(response, 429, { error: 'rate_limited' }, state, { 'Retry-After': '60' })
     return true
   }
 
   const body = await readJson(request)
-  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
-  if (email.length > 254 || !emailPattern.test(email)) {
-    writeJson(response, 400, { error: 'invalid_email' }, state)
+  const email = normalizeEmail(body?.email)
+  const password = body?.password
+  if (email.length > 254 || !emailPattern.test(email) || !validPassword(password)) {
+    writeJson(response, 400, { error: 'invalid_credentials' }, state)
     return true
   }
 
   const context = createSupabaseRequestClient(request, config)
-  const { error } = await context.client.auth.signInWithOtp({
+  const { data, error } = await context.client.auth.signInWithPassword({
     email,
-    options: {
-      emailRedirectTo: `${config.appOrigin}/auth/callback`,
-      shouldCreateUser: false,
-    },
+    password,
   })
-  if (error) console.error('auth_link_request_failed')
-  // Identical response prevents account enumeration.
-  writeJson(response, 202, { accepted: true }, context.state)
+  if (error || !data.session || !data.user) {
+    writeJson(response, 401, { error: 'invalid_credentials' }, context.state)
+    return true
+  }
+  writeJson(response, 200, { signedIn: true }, context.state)
   return true
 }
 
-async function authCallback(request, response, config) {
+async function setPassword(request, response, config) {
   const state = createResponseState()
-  if (!method(request, response, ['GET'], state)) return true
-  if (!liveOnly(response, config, state)) return true
-  const url = new URL(request.url ?? '/auth/callback', config.appOrigin)
-  const code = url.searchParams.get('code')
-  if (!code || code.length > 2_048) {
-    writeRedirect(response, `${config.appOrigin}/?auth=invalid`, state)
+  if (!method(request, response, ['POST'], state)) return true
+  if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
+  if (!withinRateLimit(request, 'auth-password-update')) {
+    writeJson(response, 429, { error: 'rate_limited' }, state, { 'Retry-After': '60' })
     return true
   }
+
+  const body = await readJson(request)
+  if (!validPassword(body?.password)) {
+    writeJson(response, 400, { error: 'invalid_password' }, state)
+    return true
+  }
+
   const context = createSupabaseRequestClient(request, config)
-  const { error } = await context.client.auth.exchangeCodeForSession(code)
-  writeRedirect(response, `${config.appOrigin}/?auth=${error ? 'error' : 'success'}`, context.state)
+  const { data, error: userError } = await context.client.auth.getUser()
+  if (userError || !data.user) {
+    writeJson(response, 401, { error: 'unauthorized' }, context.state)
+    return true
+  }
+  const { error } = await context.client.auth.updateUser({ password: body.password })
+  if (error) {
+    const code = /reauthentication/i.test(error.message) ? 'password_reauthentication_required' : 'password_update_failed'
+    console.error(code)
+    writeJson(response, 400, { error: code }, context.state)
+    return true
+  }
+  writeJson(response, 200, { passwordUpdated: true }, context.state)
   return true
 }
 
@@ -197,6 +223,14 @@ async function approvalDecision(request, response, config, approvalId) {
   return true
 }
 
+async function invokedFunctionErrorCode(error) {
+  const context = error && typeof error === 'object' ? error.context : null
+  if (!context || typeof context.clone !== 'function') return null
+  const payload = await context.clone().json().catch(() => null)
+  const code = payload && typeof payload.error === 'string' ? payload.error : null
+  return code && /^[a-z_]{3,80}$/.test(code) ? code : null
+}
+
 async function gmailConnect(request, response, config) {
   const state = createResponseState()
   if (!method(request, response, ['POST'], state)) return true
@@ -213,11 +247,21 @@ async function gmailConnect(request, response, config) {
     headers: { Origin: config.appOrigin },
   })
   if (error || typeof data?.authorizationUrl !== 'string') {
+    const edgeError = error ? await invokedFunctionErrorCode(error) : null
+    const code = edgeError === 'oauth_not_configured' || edgeError === 'rate_limited' || edgeError === 'oauth_start_failed'
+      ? edgeError
+      : 'gmail_connect_failed'
     console.error('gmail_connect_failed')
-    writeJson(response, 502, { error: 'gmail_connect_failed' }, context.state)
+    writeJson(response, edgeError === 'rate_limited' ? 429 : 502, { error: code }, context.state)
     return true
   }
-  const authorizationUrl = new URL(data.authorizationUrl)
+  let authorizationUrl
+  try {
+    authorizationUrl = new URL(data.authorizationUrl)
+  } catch {
+    writeJson(response, 502, { error: 'invalid_oauth_destination' }, context.state)
+    return true
+  }
   if (authorizationUrl.protocol !== 'https:' || authorizationUrl.hostname !== 'accounts.google.com') {
     writeJson(response, 502, { error: 'invalid_oauth_destination' }, context.state)
     return true
@@ -229,11 +273,15 @@ async function gmailConnect(request, response, config) {
 export async function handleApplicationRoute(request, response, config, path) {
   try {
     if (path === '/api/session') return await session(request, response, config)
-    if (path === '/api/auth/request-link') return await requestLink(request, response, config)
+    if (path === '/api/auth/sign-in') return await passwordSignIn(request, response, config)
+    if (path === '/api/auth/password') return await setPassword(request, response, config)
     if (path === '/api/auth/signout') return await signOut(request, response, config)
     if (path === '/api/dashboard') return await dashboard(request, response, config)
     if (path === '/api/gmail/connect') return await gmailConnect(request, response, config)
-    if (path === '/auth/callback') return await authCallback(request, response, config)
+    if (path === '/auth/callback') {
+      writeJson(response, 410, { error: 'password_login_only' }, createResponseState())
+      return true
+    }
     const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)\/decision$/)
     if (approvalMatch) return await approvalDecision(request, response, config, approvalMatch[1])
     if (path.startsWith('/api/') || path === '/auth') {

@@ -1,5 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { randomState, sha256Hex } from '../_shared/crypto.ts'
+import { randomState, sha256Hex, validateEncryptionKey } from '../_shared/crypto.ts'
 import { corsHeaders, json } from '../_shared/http.ts'
 
 function env(name: string) {
@@ -17,6 +17,8 @@ function publishableKey() {
 }
 
 function oauthConfig() {
+  env('GOOGLE_CLIENT_SECRET')
+  validateEncryptionKey(env('TOKEN_ENCRYPTION_KEY'))
   return {
     clientId: env('GOOGLE_CLIENT_ID'),
     redirectUri: env('GOOGLE_REDIRECT_URI'),
@@ -24,7 +26,10 @@ function oauthConfig() {
 }
 
 function errorCode(error: unknown) {
-  return error instanceof Error && /^(GOOGLE_CLIENT_ID|GOOGLE_REDIRECT_URI) is not configured$/.test(error.message)
+  return error instanceof Error && (
+    /^(GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|GOOGLE_REDIRECT_URI|TOKEN_ENCRYPTION_KEY) is not configured$/.test(error.message) ||
+    error.message === 'TOKEN_ENCRYPTION_KEY is invalid'
+  )
     ? 'oauth_not_configured'
     : 'oauth_start_failed'
 }
@@ -61,7 +66,12 @@ Deno.serve(async (request) => {
     if (countError) throw countError
     if ((count ?? 0) >= 5) return json({ error: 'rate_limited' }, 429, { ...cors, 'retry-after': '60' })
 
-    await admin.from('oauth_states').delete().eq('user_id', user.id).lt('expires_at', new Date().toISOString())
+    const { error: cleanupError } = await admin.from('oauth_states')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('provider', 'gmail')
+      .is('consumed_at', null)
+    if (cleanupError) throw cleanupError
 
     const state = randomState()
     const { error } = await admin.from('oauth_states').insert({

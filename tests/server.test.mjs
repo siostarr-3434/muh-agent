@@ -56,3 +56,14 @@ test('same-origin validation is exact', () => {
   assert.equal(requireSameOrigin(request, 'https://example.com'), false)
   assert.equal(requireSameOrigin({ headers: {} }, 'https://muh.example.com'), false)
 })
+
+test('server auth uses password login and no magic-link route', async () => {
+  const api = await import('node:fs/promises').then(({ readFile }) => readFile(new URL('../scripts/server/api.mjs', import.meta.url), 'utf8'))
+
+  assert.match(api, /\/api\/auth\/sign-in/)
+  assert.match(api, /\/api\/auth\/password/)
+  assert.match(api, /signInWithPassword/)
+  assert.match(api, /updateUser/)
+  assert.doesNotMatch(api, /signInWithOtp/)
+  assert.doesNotMatch(api, /\/api\/auth\/request-link/)
+})

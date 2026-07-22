@@ -101,6 +101,11 @@ h3 { margin: 6px 0 0; font: 600 15px 'Space Grotesk'; letter-spacing: -.02em; }
 .approval-card.rejected { opacity: .68; }
 .empty-inline { padding: 24px 18px; color: var(--muted); font-size: 11px; text-align: center; }
 .signout-button { display: flex; margin-top: 10px; }
+.password-panel { margin-top: 17px; padding: 17px; }
+.password-panel h3 { margin: 8px 0; }
+.password-panel > p { max-width: 620px; margin: 0; color: var(--muted-2); font-size: 11px; line-height: 1.6; }
+.password-panel .auth-form { max-width: 440px; }
+.password-panel > small { display: block; margin-top: 14px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 .auth-card { width: min(100%, 480px); padding: 32px; box-shadow: 0 25px 75px rgba(0,0,0,.28); }
 .auth-card .brand-mark { width: 44px; height: 44px; margin-bottom: 24px; }

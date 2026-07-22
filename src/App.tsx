@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ApiError, beginGmailConnection, decideApproval, getDashboard, getSession, requestMagicLink, signOut, type DashboardResponse, type SessionResponse } from './api'
+import { ApiError, beginGmailConnection, decideApproval, getDashboard, getSession, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
 import type { ApprovalItem, Deadline, EvidenceLevel, MailAccount, Obligation, ObligationStatus, ViewId } from './types'
 
@@ -54,10 +54,20 @@ function initialView(): ViewId {
 
 function initialNotice() {
   const query = new URLSearchParams(window.location.search)
-  if (query.get('auth') === 'success') return 'Güvenli oturum açıldı.'
-  if (query.has('auth')) return 'Oturum bağlantısı doğrulanamadı. Yeni bir bağlantı isteyin.'
   if (query.get('gmail') === 'connected') return 'Gmail hesabı bağlandı; ilk güvenli senkronizasyon hazırlanıyor.'
-  if (query.has('gmail')) return 'Gmail bağlantısı tamamlanamadı. Ayarlardan yeniden deneyin.'
+  if (query.get('gmail') === 'cancelled') return 'Google izin ekranı kapatıldı; hiçbir Gmail hesabı bağlanmadı.'
+  if (query.get('gmail') === 'expired') return 'Gmail bağlantı oturumu sona erdi. Bağlantıyı yeniden başlatın.'
+  if (query.get('gmail') === 'failed') {
+    const error = query.get('gmail_error')
+    if (error === 'google_client_invalid') return 'Google OAuth istemci kimliği ve gizli anahtarı eşleşmiyor. Aynı Google OAuth uygulamasına ait olduklarını kontrol edin.'
+    if (error === 'google_code_invalid') return 'Google yetkilendirme kodu geçersiz veya kullanılmış. Bağlantıyı yeniden başlatın.'
+    if (error === 'google_scope_mismatch') return 'Google gerekli salt-okunur Gmail izinlerini döndürmedi. İzin ekranında tüm istenen izinleri onaylayın.'
+    if (error === 'google_refresh_token_missing') return 'Google kalıcı erişim anahtarını döndürmedi. Hesabı Google izinlerinden kaldırıp yeniden bağlayın.'
+    if (error === 'token_encryption_invalid') return 'Gmail token şifreleme anahtarı geçerli değil. Supabase ayarını 32 bayt anahtarla güncelleyin.'
+    if (error === 'account_save_failed') return 'Gmail hesabı güvenli biçimde kaydedilemedi. Bağlantı kaydı oluşturulmadı.'
+    if (error === 'oauth_not_configured') return 'Google OAuth ayarları eksik. Client ID, Client Secret ve yönlendirme adresini kontrol edin.'
+    return 'Gmail bağlantısı tamamlanamadı. Güvenli hata kaydı oluşturuldu; ayarlardan yeniden deneyin.'
+  }
   return ''
 }
 
@@ -65,9 +75,8 @@ function gmailConnectErrorMessage(error: unknown) {
   const code = error instanceof ApiError ? error.code : ''
   if (code === 'unauthorized') return 'Gmail bağlantısı için önce dashboarddan oturum açın.'
   if (code === 'rate_limited') return 'Gmail bağlantısı için çok sık deneme yapıldı. Bir dakika bekleyin.'
-  if (code === 'oauth_not_configured' || code === 'oauth_start_failed' || code === 'gmail_connect_failed') {
-    return 'Google OAuth yapılandırması tamamlanmamış; mevcut Gmail izinleri değişmedi.'
-  }
+  if (code === 'oauth_not_configured') return 'Google OAuth ayarları eksik veya token şifreleme anahtarı geçersiz; mevcut Gmail izinleri değişmedi.'
+  if (code === 'oauth_start_failed') return 'Gmail OAuth başlangıcı güvenli biçimde tamamlanamadı; mevcut Gmail izinleri değişmedi.'
   return 'Gmail bağlantısı başlatılamadı; mevcut yetkiler değişmedi.'
 }
 
@@ -341,20 +350,60 @@ function FailureScreen({ message }: { message: string }) {
 
 function LoginPanel({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState('')
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [password, setPasswordValue] = useState('')
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'error'>('idle')
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    setStatus('sending')
+    setStatus('submitting')
     try {
-      await requestMagicLink(email)
-      setStatus('sent')
+      await signIn(email, password)
+      window.location.assign('/')
     } catch {
       setStatus('error')
     }
   }
 
-  return <section className="login-panel panel" data-testid="login-panel" aria-labelledby="dashboard-login-title"><div className="login-panel-head"><div><div className="eyebrow">DASHBOARD OTURUMU</div><h2 id="dashboard-login-title">Dashboard’dan giriş yap</h2><p>Sayfa açılırken e-posta gönderilmez. Güvenli bağlantı yalnızca bu formu bilinçli olarak gönderdiğinde istenir.</p></div><button type="button" className="button ghost" onClick={onClose}>Kapat</button></div><form className="auth-form" onSubmit={submit}><label htmlFor="login-email">E-posta adresi</label><input id="login-email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /><button className="button primary" disabled={status === 'sending' || status === 'sent'}>{status === 'sending' ? 'Gönderiliyor…' : status === 'sent' ? 'Bağlantı gönderildi' : 'Güvenli bağlantı gönder'}</button></form>{status === 'sent' && <div className="auth-notice" role="status">Adres sistemde kayıtlıysa bağlantı gönderildi. Gelen kutunuzu kontrol edin.</div>}{status === 'error' && <div className="auth-notice error" role="alert">İstek tamamlanamadı. Bir dakika sonra yeniden deneyin.</div>}<small>Oturum jetonları JavaScript'e açılmaz; yalnızca HttpOnly çerezde tutulur.</small></section>
+  return <section className="login-panel panel" data-testid="login-panel" aria-labelledby="dashboard-login-title"><div className="login-panel-head"><div><div className="eyebrow">DASHBOARD OTURUMU</div><h2 id="dashboard-login-title">Dashboard’dan giriş yap</h2><p>Giriş yalnızca e-posta ve şifreyle yapılır; bu ekrandan e-posta veya kod gönderilmez.</p></div><button type="button" className="button ghost" onClick={onClose}>Kapat</button></div><form className="auth-form" onSubmit={submit}><label htmlFor="login-email">E-posta adresi</label><input id="login-email" type="email" autoComplete="username" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /><label htmlFor="login-password">Şifre</label><input id="login-password" type="password" autoComplete="current-password" required minLength={12} maxLength={128} value={password} onChange={(event) => setPasswordValue(event.target.value)} /><button className="button primary" disabled={status === 'submitting'}>{status === 'submitting' ? 'Giriş yapılıyor…' : 'Giriş yap'}</button></form>{status === 'error' && <div className="auth-notice error" role="alert">E-posta veya şifre doğru değil. İlk şifreni mevcut açık oturumdan Ayarlar bölümünde belirleyebilirsin.</div>}<small>Oturum jetonları JavaScript'e açılmaz; yalnızca HttpOnly çerezde tutulur.</small></section>
+}
+
+function PasswordPanel({ onNotice }: { onNotice: (message: string) => void }) {
+  const [password, setPasswordValue] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error' | 'saved'>('idle')
+  const [message, setMessage] = useState('')
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (password.length < 12) {
+      setMessage('Şifre en az 12 karakter olmalı.')
+      setStatus('error')
+      return
+    }
+    if (password !== confirmation) {
+      setMessage('Şifre tekrarı eşleşmiyor.')
+      setStatus('error')
+      return
+    }
+
+    setStatus('saving')
+    try {
+      await setPassword(password)
+      setPasswordValue('')
+      setConfirmation('')
+      setMessage('Şifre kaydedildi. Sonraki girişlerde e-posta ve şifren yeterli olacak.')
+      setStatus('saved')
+      onNotice('Oturum şifresi kaydedildi; artık e-posta kodu gönderilmeyecek.')
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : ''
+      setMessage(code === 'password_reauthentication_required'
+        ? 'Bu oturum çok eski. Şifreyi belirlemek için yeni bir oturum açın.'
+        : 'Şifre kaydedilemedi. Şifren değiştirilmedi.')
+      setStatus('error')
+    }
+  }
+
+  return <section className="panel password-panel" aria-labelledby="password-panel-title"><div className="eyebrow">ŞİFRELİ GİRİŞ</div><h3 id="password-panel-title">Oturum şifresi belirle</h3><p>Bu açık oturumda bir kez şifre belirle. Bundan sonra girişte yalnızca e-posta ve şifre kullanılacak.</p><form className="auth-form" onSubmit={submit}><label htmlFor="new-password">Yeni şifre</label><input id="new-password" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} onChange={(event) => setPasswordValue(event.target.value)} /><label htmlFor="confirm-password">Şifre tekrarı</label><input id="confirm-password" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /><button className="button primary" disabled={status === 'saving'}>{status === 'saving' ? 'Kaydediliyor…' : 'Şifreyi kaydet'}</button></form>{status === 'error' && <div className="auth-notice error" role="alert">{message}</div>}{status === 'saved' && <div className="auth-notice" role="status">{message}</div>}<small>Şifre yalnızca doğrulama servisine HTTPS üzerinden iletilir; uygulama içinde tutulmaz.</small></section>
 }
 
 function PageIntro({ eyebrow, title, detail, action }: { eyebrow: string; title: string; detail: string; action?: React.ReactNode }) {
@@ -368,7 +417,7 @@ function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, log
   const activityItems = live ? [{ id: 'live-session', time: 'Şimdi', title: 'Korumalı oturum doğrulandı', detail: 'Kayıtlar kullanıcıya ait RLS kurallarıyla okundu.', kind: 'system' as const }] : activities
   return <>
     <PageIntro eyebrow="BUGÜNÜN KONTROL MERKEZİ" title="Önce neyi güvene alıyoruz?" detail="Muh Agent, para hareketi yapmadan önce kanıtı, son tarihi ve insan onayını aynı yerde toplar." action={loginRequired ? <button className="button primary" data-testid="overview-login" onClick={onLogin}>Dashboard'dan giriş yap <span>→</span></button> : <button className="button primary" onClick={() => onNavigate('approvals')}>Onay kuyruğunu aç <span>→</span></button>} />
-    <div className="truth-banner"><span className="banner-icon">!</span><div><strong>{loginRequired ? 'Dashboard önizleme açık — kişisel kayıtların için giriş yap.' : live ? 'Kişisel kasa oturumu doğrulandı; dış işlemler yine kapalı.' : 'Şu anda gerçek Gmail, banka, DigiD veya belge bağlantısı yok.'}</strong><p>{loginRequired ? 'Sayfa açılışında e-posta gönderilmez. Giriş yaptığında yalnızca sana ait kayıtlar yüklenir.' : live ? 'Canlı kayıtlar RLS ile sınırlandı. Onay vermek yalnızca kararı kaydeder; ödeme veya gönderim ayrı ve denetimli bir adımdır.' : 'Bu ekran yalnızca ürün temelini gösterir. Demo kayıtları ile gerçek kayıtlar birbirine karıştırılmayacak.'}</p></div><EvidencePill level={loginRequired ? 'review' : live ? 'verified' : 'demo'} /></div>
+    <div className="truth-banner"><span className="banner-icon">!</span><div><strong>{loginRequired ? 'Dashboard önizleme açık — kişisel kayıtların için giriş yap.' : live ? 'Kişisel kasa oturumu doğrulandı; dış işlemler yine kapalı.' : 'Şu anda gerçek Gmail, banka, DigiD veya belge bağlantısı yok.'}</strong><p>{loginRequired ? 'Girişte yalnızca e-posta ve şifre kullanılır; e-posta veya kod gönderilmez. Giriş yaptığında yalnızca sana ait kayıtlar yüklenir.' : live ? 'Canlı kayıtlar RLS ile sınırlandı. Onay vermek yalnızca kararı kaydeder; ödeme veya gönderim ayrı ve denetimli bir adımdır.' : 'Bu ekran yalnızca ürün temelini gösterir. Demo kayıtları ile gerçek kayıtlar birbirine karıştırılmayacak.'}</p></div><EvidencePill level={loginRequired ? 'review' : live ? 'verified' : 'demo'} /></div>
     <div className="metric-grid">
       <MetricCard label="Yaklaşan süre" value={String(dueSoon)} suffix=" adet" detail="7 gün içinde açık iş" tone="amber" />
       <MetricCard label="Açık yükümlülük" value={formatEuro(totalOpen)} suffix="" detail={live ? 'Canlı açık kayıtların toplamı' : 'Demo kayıtlarının toplamı'} tone="blue" />
@@ -433,7 +482,7 @@ function SourcesView() {
 
 function SettingsView({ accounts, live, onConnect, onNotice, onSignOut }: { accounts: MailAccount[]; live: boolean; onConnect: () => void | Promise<void>; onNotice: (message: string) => void; onSignOut: () => void | Promise<void> }) {
   const connected = accounts.filter((account) => account.status === 'connected').length
-  return <><PageIntro eyebrow="AYARLAR VE BAĞLANTILAR" title="Yetkiyi küçük ve görünür tut" detail="Her hesap ve kurum için hangi kapsamın verildiği, son senkronizasyon ve iptal düğmesi ayrı görünür." action={<button className="button primary" onClick={() => void onConnect()}>Gmail hesabı bağla</button>} /><section className="panel settings-section"><div className="panel-head"><div><div className="eyebrow">E-POSTA HESAPLARI</div><h3>4 Gmail hesabı için bağlantı durumu</h3></div><span className={`pill evidence-${connected ? 'verified' : 'review'}`}>{connected} / 4 bağlı</span></div><div className="accounts-list">{accounts.length ? accounts.map((account) => <div className="account-row" key={account.id}><span className="connection-icon gmail">G</span><div><strong>{account.email}</strong><span>{account.provider} · {account.lastSync ? `son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'son tarama yok'}</span></div><span className="scope-empty">{account.scopes.length ? `${account.scopes.length} kapsam` : 'Kapsam verilmedi'}</span><span className={`pill evidence-${account.status === 'connected' ? 'verified' : 'review'}`}>{account.status === 'connected' ? 'Bağlı' : 'Yeniden yetkilendir'}</span></div>) : <div className="empty-inline">Henüz hesap bağlı değil.</div>}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">GÜVENLİK TERCİHLERİ</div><h3>Kalıcı kurallar</h3><div className="setting-row"><div><strong>Otomatik ödeme</strong><span>Daima kapalı; yalnızca onaylı taslak</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>DigiD otomasyonu</strong><span>Kimlik bilgisi saklanmaz</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>Hassas veri maskeleme</strong><span>Loglarda açık</span></div><span className="switch on">Açık</span></div></section><section className="panel"><div className="eyebrow">VERİ HAKLARI</div><h3>Kontrol sende</h3><p className="setting-copy">Veriyi dışa aktarma, bağlantıyı iptal etme ve tüm veriyi silme işlemleri ayrı, geri dönüşü açık adımlar olacak.</p><button className="button ghost" onClick={() => onNotice('Veri politikası uygulama öncesi hukuk ve güvenlik incelemesinde.')}>Veri politikası taslağı</button>{live && <button className="button secondary signout-button" onClick={() => void onSignOut()}>Bu oturumu kapat</button>}</section></div></>
+  return <><PageIntro eyebrow="AYARLAR VE BAĞLANTILAR" title="Yetkiyi küçük ve görünür tut" detail="Her hesap ve kurum için hangi kapsamın verildiği, son senkronizasyon ve iptal düğmesi ayrı görünür." action={<button className="button primary" onClick={() => void onConnect()}>Gmail hesabı bağla</button>} /><section className="panel settings-section"><div className="panel-head"><div><div className="eyebrow">E-POSTA HESAPLARI</div><h3>4 Gmail hesabı için bağlantı durumu</h3></div><span className={`pill evidence-${connected ? 'verified' : 'review'}`}>{connected} / 4 bağlı</span></div><div className="accounts-list">{accounts.length ? accounts.map((account) => <div className="account-row" key={account.id}><span className="connection-icon gmail">G</span><div><strong>{account.email}</strong><span>{account.provider} · {account.lastSync ? `son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'son tarama yok'}</span></div><span className="scope-empty">{account.scopes.length ? `${account.scopes.length} kapsam` : 'Kapsam verilmedi'}</span><span className={`pill evidence-${account.status === 'connected' ? 'verified' : 'review'}`}>{account.status === 'connected' ? 'Bağlı' : 'Yeniden yetkilendir'}</span></div>) : <div className="empty-inline">Henüz hesap bağlı değil.</div>}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">GÜVENLİK TERCİHLERİ</div><h3>Kalıcı kurallar</h3><div className="setting-row"><div><strong>Otomatik ödeme</strong><span>Daima kapalı; yalnızca onaylı taslak</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>DigiD otomasyonu</strong><span>Kimlik bilgisi saklanmaz</span></div><span className="switch off">Kapalı</span></div><div className="setting-row"><div><strong>Hassas veri maskeleme</strong><span>Loglarda açık</span></div><span className="switch on">Açık</span></div></section><section className="panel"><div className="eyebrow">VERİ HAKLARI</div><h3>Kontrol sende</h3><p className="setting-copy">Veriyi dışa aktarma, bağlantıyı iptal etme ve tüm veriyi silme işlemleri ayrı, geri dönüşü açık adımlar olacak.</p><button className="button ghost" onClick={() => onNotice('Veri politikası uygulama öncesi hukuk ve güvenlik incelemesinde.')}>Veri politikası taslağı</button>{live && <button className="button secondary signout-button" onClick={() => void onSignOut()}>Bu oturumu kapat</button>}</section></div>{live && <PasswordPanel onNotice={onNotice} />}</>
 }
 
 function Guardrail({ title, text }: { title: string; text: string }) {
