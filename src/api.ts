@@ -53,6 +53,12 @@ export interface DashboardResponse {
     purpose: string
     trust: string
   }>
+  sourceSnapshots: Array<{
+    fetched_at: string
+    source_id: string
+    title: string | null
+    url: string
+  }>
   approvals: Array<{
     actionType: string
     amount: number | null

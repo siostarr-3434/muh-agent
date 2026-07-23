@@ -34,6 +34,7 @@ test('Edge Function JWT boundaries are explicit', async () => {
   assert.match(config, /\[functions\.gmail-oauth-start\][\s\S]*?verify_jwt\s*=\s*true/)
   assert.match(config, /\[functions\.gmail-oauth-callback\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.gmail-sync\][\s\S]*?verify_jwt\s*=\s*false/)
+  assert.match(config, /\[functions\.source-refresh\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.approval-decision\][\s\S]*?verify_jwt\s*=\s*true/)
 })
 

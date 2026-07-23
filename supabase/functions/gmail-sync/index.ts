@@ -50,6 +50,11 @@ function header(headers: Array<{ name?: string; value?: string }> | undefined, n
   return headers?.find((item) => item.name?.toLowerCase() === name)?.value ?? null
 }
 
+const inboxMessageLimit = 30
+const officialMessageLimit = 30
+const queuedMessageLimit = 30
+const officialGmailQuery = '{from:ind.nl from:cjib.nl from:belastingdienst.nl from:waterland.nl from:rechtspraak.nl from:om.nl from:politie.nl from:mijnoverheid.nl from:uwv.nl from:svb.nl from:digid.nl} newer_than:730d'
+
 const dutchMonths: Record<string, number> = {
   januari: 1,
   februari: 2,
@@ -230,75 +235,112 @@ async function persistTriage(admin: ReturnType<typeof adminClient>, account: { i
   }
 }
 
+function listPath(query?: string) {
+  const params = new URLSearchParams({ maxResults: String(query ? officialMessageLimit : inboxMessageLimit) })
+  if (query) params.set('q', query)
+  else params.set('labelIds', 'INBOX')
+  return `messages?${params.toString()}`
+}
+
+async function listMessages(accessToken: string, query?: string) {
+  const list = await gmailJson(listPath(query), accessToken) as { messages?: Array<{ id: string; threadId?: string }> }
+  return list.messages ?? []
+}
+
+async function queuedMessages(admin: ReturnType<typeof adminClient>, accountId: string) {
+  const { data, error } = await admin
+    .from('email_messages')
+    .select('provider_message_id,thread_id')
+    .eq('account_id', accountId)
+    .eq('processing_status', 'queued')
+    .limit(queuedMessageLimit)
+  if (error) throw new Error('queued_messages_query_failed')
+  return (data ?? []).map((item) => ({ id: item.provider_message_id, threadId: item.thread_id ?? undefined }))
+}
+
+async function syncMessage(admin: ReturnType<typeof adminClient>, account: { id: string; user_id: string; email: string }, accessToken: string, message: { id: string; threadId?: string }) {
+  const detail = await gmailJson(`messages/${encodeURIComponent(message.id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, accessToken) as { id?: string; threadId?: string; snippet?: string; internalDate?: string; labelIds?: string[]; payload?: { headers?: Array<{ name?: string; value?: string }> } }
+  const providerMessageId = detail.id ?? message.id
+  const fromAddress = header(detail.payload?.headers, 'From')
+  const subject = header(detail.payload?.headers, 'Subject')
+  const triage = classifyMessage(account.email, fromAddress, subject, detail.snippet ?? null)
+  const sourceRef = `gmail://${account.id}/${providerMessageId}`
+  const { data: saved, error } = await admin.from('email_messages').upsert({
+    user_id: account.user_id,
+    account_id: account.id,
+    provider_message_id: providerMessageId,
+    thread_id: detail.threadId ?? message.threadId ?? null,
+    from_address: fromAddress,
+    subject,
+    received_at: detail.internalDate ? new Date(Number(detail.internalDate)).toISOString() : null,
+    snippet: detail.snippet ?? null,
+    label_ids: detail.labelIds ?? [],
+    sensitivity: 'restricted',
+    classification: triage.classification,
+    extracted_data: {
+      account_email: account.email,
+      amount: triage.amount,
+      authority: triage.authority,
+      category: triage.category,
+      due_date: triage.dueDate,
+      source_ref: sourceRef,
+      tags: triage.tags,
+    },
+    processing_status: triage.relevant ? 'review_required' : 'processed',
+  }, { onConflict: 'account_id,provider_message_id' }).select('id')
+  if (error) throw new Error('message_save_failed')
+  const savedId = (saved ?? [])[0]?.id
+  if (!savedId) return 0
+  await persistTriage(admin, account, sourceRef, triage)
+  return 1
+}
+
 async function syncAccount(admin: ReturnType<typeof adminClient>, account: { id: string; user_id: string; email: string }) {
   const { data: token } = await admin.from('email_tokens').select('refresh_token_ciphertext').eq('account_id', account.id).single()
   if (!token) throw new Error('token_missing')
   const accessToken = await refreshAccessToken(await decryptSecret(token.refresh_token_ciphertext, env('TOKEN_ENCRYPTION_KEY')))
-  const list = await gmailJson('messages?labelIds=INBOX&maxResults=50', accessToken) as { messages?: Array<{ id: string; threadId?: string }> }
+  const messages = new Map<string, { id: string; threadId?: string }>()
+  for (const message of await listMessages(accessToken)) messages.set(message.id, message)
+  for (const message of await listMessages(accessToken, officialGmailQuery)) messages.set(message.id, message)
+  for (const message of await queuedMessages(admin, account.id)) messages.set(message.id, message)
   let imported = 0
 
-  for (const message of list.messages ?? []) {
-    const detail = await gmailJson(`messages/${encodeURIComponent(message.id)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`, accessToken) as { id?: string; threadId?: string; snippet?: string; internalDate?: string; labelIds?: string[]; payload?: { headers?: Array<{ name?: string; value?: string }> } }
-    const providerMessageId = detail.id ?? message.id
-    const fromAddress = header(detail.payload?.headers, 'From')
-    const subject = header(detail.payload?.headers, 'Subject')
-    const triage = classifyMessage(account.email, fromAddress, subject, detail.snippet ?? null)
-    const sourceRef = `gmail://${account.id}/${providerMessageId}`
-    const { data: saved, error } = await admin.from('email_messages').upsert({
-      user_id: account.user_id,
-      account_id: account.id,
-      provider_message_id: providerMessageId,
-      thread_id: detail.threadId ?? message.threadId ?? null,
-      from_address: fromAddress,
-      subject,
-      received_at: detail.internalDate ? new Date(Number(detail.internalDate)).toISOString() : null,
-      snippet: detail.snippet ?? null,
-      label_ids: detail.labelIds ?? [],
-      sensitivity: 'restricted',
-      classification: triage.classification,
-      extracted_data: {
-        account_email: account.email,
-        amount: triage.amount,
-        authority: triage.authority,
-        category: triage.category,
-        due_date: triage.dueDate,
-        source_ref: sourceRef,
-        tags: triage.tags,
-      },
-      processing_status: triage.relevant ? 'review_required' : 'processed',
-    }, { onConflict: 'account_id,provider_message_id' }).select('id')
-    if (error) throw new Error('message_save_failed')
-    const savedId = (saved ?? [])[0]?.id
-    if (savedId) {
-      await persistTriage(admin, account, sourceRef, triage)
-      imported += 1
-    }
+  for (const message of messages.values()) {
+    imported += await syncMessage(admin, account, accessToken, message)
   }
 
   await admin.from('email_accounts').update({ status: 'connected', last_sync_at: new Date().toISOString(), last_error_code: null }).eq('id', account.id)
   return imported
 }
 
+async function syncAccountWithAudit(admin: ReturnType<typeof adminClient>, account: { id: string; user_id: string; email: string }) {
+  try {
+    const imported = await syncAccount(admin, account)
+    await admin.from('audit_events').insert({ user_id: account.user_id, actor: 'worker', event_type: 'gmail_sync_completed', object_type: 'email_account', object_id: account.id, metadata: { imported } })
+    return { accountId: account.id, imported, status: 'ok' }
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'sync_failed'
+    await admin.from('email_accounts').update({ status: code === 'refresh_token_rejected' ? 'reauth_required' : 'error', last_error_code: code }).eq('id', account.id)
+    await admin.from('audit_events').insert({ user_id: account.user_id, actor: 'worker', event_type: 'gmail_sync_failed', object_type: 'email_account', object_id: account.id, metadata: { code } })
+    return { accountId: account.id, imported: 0, status: 'failed' }
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405, { allow: 'POST' })
   if (!await workerAuthorized(request)) return json({ error: 'unauthorized' }, 401)
   const admin = adminClient()
-  const { data: accounts, error } = await admin.from('email_accounts').select('id,user_id,email').eq('provider', 'gmail').eq('status', 'connected').limit(25)
+  const { data: accounts, error } = await admin
+    .from('email_accounts')
+    .select('id,user_id,email')
+    .eq('provider', 'gmail')
+    .eq('status', 'connected')
+    .order('last_sync_at', { ascending: true, nullsFirst: true })
+    .order('created_at', { ascending: true })
+    .limit(25)
   if (error) return json({ error: 'accounts_query_failed' }, 500)
 
-  const results: Array<{ accountId: string; imported: number; status: string }> = []
-  for (const account of accounts ?? []) {
-    try {
-      const imported = await syncAccount(admin, account)
-      await admin.from('audit_events').insert({ user_id: account.user_id, actor: 'worker', event_type: 'gmail_sync_completed', object_type: 'email_account', object_id: account.id, metadata: { imported } })
-      results.push({ accountId: account.id, imported, status: 'ok' })
-    } catch (error) {
-      const code = error instanceof Error ? error.message : 'sync_failed'
-      await admin.from('email_accounts').update({ status: code === 'refresh_token_rejected' ? 'reauth_required' : 'error', last_error_code: code }).eq('id', account.id)
-      await admin.from('audit_events').insert({ user_id: account.user_id, actor: 'worker', event_type: 'gmail_sync_failed', object_type: 'email_account', object_id: account.id, metadata: { code } })
-      results.push({ accountId: account.id, imported: 0, status: 'failed' })
-    }
-  }
+  const results = await Promise.all((accounts ?? []).map((account) => syncAccountWithAudit(admin, account)))
 
   return json({ accounts: results, completedAt: new Date().toISOString() })
 })

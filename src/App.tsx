@@ -219,15 +219,22 @@ function mapDashboard(payload: DashboardResponse) {
     sourceUrl: item.source_url ?? undefined,
     title: item.title,
   }))
-  const liveSources: SourceRecord[] = payload.sources.map((item) => ({
-    domain: item.domain,
-    enabled: item.enabled_by_default,
-    id: item.id,
-    lastChecked: 'Kaynak kataloğu',
-    name: item.name,
-    purpose: item.purpose,
-    trust: item.trust === 'secondary' ? 'secondary' : 'official',
-  }))
+  const latestSnapshotBySource = new Map<string, DashboardResponse['sourceSnapshots'][number]>()
+  for (const snapshot of payload.sourceSnapshots) {
+    if (!latestSnapshotBySource.has(snapshot.source_id)) latestSnapshotBySource.set(snapshot.source_id, snapshot)
+  }
+  const liveSources: SourceRecord[] = payload.sources.map((item) => {
+    const snapshot = latestSnapshotBySource.get(item.id)
+    return {
+      domain: item.domain,
+      enabled: item.enabled_by_default,
+      id: item.id,
+      lastChecked: snapshot ? new Date(snapshot.fetched_at).toLocaleString('tr-TR') : 'Henüz public kontrol yok',
+      name: item.name,
+      purpose: snapshot?.title ? `${item.purpose} · Son başlık: ${snapshot.title}` : item.purpose,
+      trust: item.trust === 'secondary' ? 'secondary' : 'official',
+    }
+  })
   const liveKnowledge: KnowledgeItem[] = payload.knowledgeItems.map((item) => {
     const category = Object.hasOwn(knowledgeCategoryLabel, item.category) ? item.category as KnowledgeItem['category'] : 'other'
     return {

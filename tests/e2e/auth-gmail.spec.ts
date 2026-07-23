@@ -9,6 +9,7 @@ const emptyDashboard = {
   messages: [],
   notifications: [],
   obligations: [],
+  sourceSnapshots: [],
   sources: [],
 }
 
