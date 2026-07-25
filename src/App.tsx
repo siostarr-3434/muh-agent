@@ -92,6 +92,51 @@ const lifeRadarItems = [
   },
 ]
 
+const preventiveChecklist = [
+  {
+    action: 'Kraamzorg, verloskundige ve doğum planı belgelerini Drive’da tek klasöre koy; mail/Drive worker bu klasörü izlesin.',
+    source: 'Rijksoverheid',
+    tag: 'Hamilelik',
+    title: 'Doğum öncesi hazırlık paketi',
+    url: 'https://www.rijksoverheid.nl/vraag-en-antwoord/zwangerschap-en-geboorte/checklist-kind-krijgen',
+  },
+  {
+    action: 'Doğumdan sonra 3 iş günü içinde doğum bildirimi, 4 ay içinde sağlık sigortasına çocuk ekleme ve SVB/kinderbijslag mektubunu takip et.',
+    source: 'Rijksoverheid / SVB',
+    tag: 'Bebek',
+    title: 'Doğum sonrası kritik süreler',
+    url: 'https://www.rijksoverheid.nl/vraag-en-antwoord/zwangerschap-en-geboorte/checklist-kind-krijgen',
+  },
+  {
+    action: 'Kind doğunca toeslagpartner, kindgebonden budget, kinderopvangtoeslag ve gelir değişikliği etkisini kontrol et; yanlış toeslag ileride borç doğurur.',
+    source: 'Dienst Toeslagen',
+    tag: 'Para',
+    title: 'Toeslagen geri ödeme riskini azalt',
+    url: 'https://www.toeslagen.nl/',
+  },
+  {
+    action: 'IND dosyasında erkend referent, gelir şartı, iş sözleşmesi, maaş bordrosu, karar/itiraz tarihi ve avukatın istediği belge listesini tek kontrol tablosunda tut.',
+    source: 'IND',
+    tag: 'Oturum',
+    title: 'Kennismigrant dosya kalkanı',
+    url: 'https://ind.nl/nl/verblijfsvergunningen/werken/kennismigrant',
+  },
+  {
+    action: '5 yıl çalışma/oturum eşiği ve “arbeid vrij toegestaan” notu için IND sayfasındaki şartları avukatla doğrula; sistem sadece hatırlatıcı üretir.',
+    source: 'IND',
+    tag: 'Gelecek hak',
+    title: 'Serbest çalışma / kalıcı statü kontrolü',
+    url: 'https://ind.nl/nl/vervangen-verlengen-vernieuwen-en-wijzigen/onbepaalde-tijd/verblijfsvergunning-onbepaalde-tijd-aanvragen',
+  },
+  {
+    action: 'CJIB, mahkeme, belediye vergisi ve Belastingdienst yazılarında tutar + son ödeme + bezwaar süresini ayrı ayrı doğrula; ödeme ve itiraz kararını karıştırma.',
+    source: 'CJIB / Rechtspraak / Belastingdienst',
+    tag: 'Ceza/Borç',
+    title: 'Borç-ceza erken uyarı kuralı',
+    url: 'https://www.cjib.nl/direct-regelen/ik-ben-het-niet-eens-met-mijn-boete/ik-ben-het-niet-eens-met-een-verkeersboete',
+  },
+]
+
 const formatEuro = (amount: number) =>
   new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount)
 
@@ -668,7 +713,7 @@ function DeadlinesView({ items, live }: { items: Deadline[]; live: boolean }) {
 }
 
 function LifeRadarView({ knowledge, live, notifications, onOpenSettings }: { knowledge: KnowledgeItem[]; live: boolean; notifications: NotificationItem[]; onOpenSettings: () => void }) {
-  return <><PageIntro eyebrow="YAŞAM RADAR" title="Hollanda’da seni etkileyen kurum, süre ve haklar" detail="Bu bölüm resmi kaynakları, bağlı Gmail sinyallerini ve senin manuel eklediğin bilgileri bir araya getirir. Hukuki/medikal karar yerine geçmez; avukat veya resmi kurumla doğrulanacak aksiyon listesi üretir." action={<button className="button primary" onClick={onOpenSettings}>Bilgi / skill ekle →</button>} /><div className="life-hero panel"><div><div className="eyebrow">KİŞİSEL BAĞLAM</div><h3>Adres: Nieuwland 51, Broek in Waterland 1151 AZ</h3><p>Belediye odağı: Gemeente Waterland. Öncelikler: IND dosyası, 5 yıl oturum eşiği, hamilelik hakları, CJIB/vergi/mahkeme yazışmaları ve Berichtenbox kontrolü.</p></div><EvidencePill level="review" /></div><div className="life-grid">{lifeRadarItems.map((item) => <article className="panel life-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.text}</p><small>{item.source}</small></article>)}</div><div className="overview-grid"><section className="panel"><div className="panel-head"><div><div className="eyebrow">CANLI UYARILAR</div><h3>Gmail worker’ın yakaladığı riskler</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{notifications.length} kayıt</span></div><div className="notification-list">{notifications.length ? notifications.map((item) => <div className={`notification-row ${item.severity}`} key={item.id}><strong>{item.title}</strong><p>{item.body}</p><span>{new Date(item.createdAt).toLocaleString('tr-TR')}</span></div>) : <div className="empty-inline">{live ? 'Henüz canlı uyarı yok. Gmail worker ilk taramadan sonra burada görünür.' : 'Canlı oturum yok; demo uyarı üretilmez.'}</div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ</div><h3>Manuel kayıtlı bilgi / skill</h3></div><button className="text-button" onClick={onOpenSettings}>Ekle →</button></div><div className="knowledge-list">{knowledge.length ? knowledge.slice(0, 6).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p>{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Kaynak ↗</a>}</div>) : <div className="empty-inline">Henüz manuel bilgi yok. Ayarlar’dan “skill / yöntem / hak” ekleyebilirsin.</div>}</div></section></div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">YETKİ SINIRI</div><h3>DigiD, BSN, ödeme ve resmi başvuru otomatikleşmez</h3></div><EvidencePill level="verified" /></div><p>Sistem sana kaynaklı kontrol listesi, belge paketi ve uyarı üretir. DigiD şifresi/BSN saklamaz; itiraz, ödeme, form gönderimi veya kurumla yazışma ancak ayrı ekranda metin ve kanıtı görüp sen onayladıktan sonra ilerler.</p></section></>
+  return <><PageIntro eyebrow="YAŞAM RADAR" title="Hollanda’da seni etkileyen kurum, süre ve haklar" detail="Bu bölüm resmi kaynakları, bağlı Gmail sinyallerini ve senin manuel eklediğin bilgileri bir araya getirir. Hukuki/medikal karar yerine geçmez; avukat veya resmi kurumla doğrulanacak aksiyon listesi üretir." action={<button className="button primary" onClick={onOpenSettings}>Bilgi / skill ekle →</button>} /><div className="life-hero panel"><div><div className="eyebrow">KİŞİSEL BAĞLAM</div><h3>Adres: Nieuwland 51, Broek in Waterland 1151 AZ</h3><p>Belediye odağı: Gemeente Waterland. Öncelikler: IND dosyası, 5 yıl oturum eşiği, hamilelik hakları, CJIB/vergi/mahkeme yazışmaları ve Berichtenbox kontrolü.</p></div><EvidencePill level="review" /></div><div className="life-grid">{lifeRadarItems.map((item) => <article className="panel life-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.text}</p><small>{item.source}</small></article>)}</div><section className="panel preventive-panel"><div className="panel-head"><div><div className="eyebrow">ÖNLEYİCİ KONTROL LİSTESİ</div><h3>Yaşam kalitesini artıracak erken kontroller</h3></div><span className="pill evidence-review">{preventiveChecklist.length} başlık</span></div><div className="preventive-grid">{preventiveChecklist.map((item) => <article className="preventive-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.action}</p><small>{item.source}</small></article>)}</div></section><div className="overview-grid"><section className="panel"><div className="panel-head"><div><div className="eyebrow">CANLI UYARILAR</div><h3>Gmail/Drive/watchdog’ın yakaladığı riskler</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{notifications.length} kayıt</span></div><div className="notification-list">{notifications.length ? notifications.map((item) => <div className={`notification-row ${item.severity}`} key={item.id}><strong>{item.title}</strong><p>{item.body}</p><span>{new Date(item.createdAt).toLocaleString('tr-TR')}</span></div>) : <div className="empty-inline">{live ? 'Henüz canlı uyarı yok. Watchdog, Gmail ve Drive taramalarından sonra burada görünür.' : 'Canlı oturum yok; demo uyarı üretilmez.'}</div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ</div><h3>Manuel kayıtlı bilgi / skill</h3></div><button className="text-button" onClick={onOpenSettings}>Ekle →</button></div><div className="knowledge-list">{knowledge.length ? knowledge.slice(0, 6).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p>{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Kaynak ↗</a>}</div>) : <div className="empty-inline">Henüz manuel bilgi yok. Ayarlar’dan “skill / yöntem / hak” ekleyebilirsin.</div>}</div></section></div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">YETKİ SINIRI</div><h3>DigiD, BSN, ödeme ve resmi başvuru otomatikleşmez</h3></div><EvidencePill level="verified" /></div><p>Sistem sana kaynaklı kontrol listesi, belge paketi ve uyarı üretir. DigiD şifresi/BSN saklamaz; itiraz, ödeme, form gönderimi veya kurumla yazışma ancak ayrı ekranda metin ve kanıtı görüp sen onayladıktan sonra ilerler.</p></section></>
 }
 
 function ApprovalsView({ items, live, onApprove }: { items: ApprovalItem[]; live: boolean; onApprove: (id: string) => void | Promise<void> }) {
