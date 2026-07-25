@@ -97,13 +97,15 @@ async function dashboard(request, response, config) {
   if (!context) return true
   const userId = context.user.id
 
-  const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult] = await Promise.all([
+  const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult] = await Promise.all([
     context.client.from('obligations').select('id,authority,title,category,amount,currency,due_date,status,evidence_level,source_url,note').eq('user_id', userId).order('due_date', { ascending: true }),
     context.client.from('deadlines').select('id,title,owner,due_at,status,evidence_level,source_url').eq('user_id', userId).order('due_at', { ascending: true }),
     context.client.from('approvals').select('id,action_type,risk,payload,status,expires_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(100),
     context.client.from('email_accounts').select('id,provider,email,label,status,scopes,last_sync_at,last_error_code').eq('user_id', userId).order('created_at', { ascending: true }),
     context.client.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+    context.client.from('provider_files').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+    context.client.from('provider_files').select('id,account_id,provider,provider_file_id,name,mime_type,size_bytes,modified_at,web_url,classification,extracted_data,status,last_seen_at').eq('user_id', userId).order('modified_at', { ascending: false, nullsFirst: false }).limit(50),
     context.client.from('email_messages').select('id,account_id,provider_message_id,from_address,subject,received_at,snippet,classification,extracted_data,processing_status').eq('user_id', userId).order('received_at', { ascending: false, nullsFirst: false }).limit(50),
     context.client.from('notifications').select('id,severity,title,body,source_url,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(25),
     context.client.from('source_catalog').select('id,name,domain,purpose,trust,enabled_by_default').order('id', { ascending: true }),
@@ -111,7 +113,7 @@ async function dashboard(request, response, config) {
     context.client.from('knowledge_items').select('id,category,title,body,source_url,evidence_level,created_at').eq('user_id', userId).eq('status', 'active').order('created_at', { ascending: false }).limit(100),
   ])
 
-  const failed = [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult].some((result) => result.error)
+  const failed = [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult].some((result) => result.error)
   if (failed) {
     console.error('dashboard_query_failed')
     writeJson(response, 502, { error: 'dashboard_unavailable' }, context.state)
@@ -121,8 +123,9 @@ async function dashboard(request, response, config) {
   writeJson(response, 200, {
     accounts: accountsResult.data ?? [],
     approvals: (approvalsResult.data ?? []).map(normalizeApproval),
-    counts: { documents: documentsResult.count ?? 0, messages: messagesCountResult.count ?? 0 },
+    counts: { documents: (documentsResult.count ?? 0) + (filesCountResult.count ?? 0), messages: messagesCountResult.count ?? 0 },
     deadlines: deadlinesResult.data ?? [],
+    files: filesResult.data ?? [],
     knowledgeItems: knowledgeResult.data ?? [],
     messages: messagesResult.data ?? [],
     notifications: notificationsResult.data ?? [],

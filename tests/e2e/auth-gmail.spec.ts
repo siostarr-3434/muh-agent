@@ -5,6 +5,7 @@ const emptyDashboard = {
   approvals: [],
   counts: { documents: 0, messages: 0 },
   deadlines: [],
+  files: [],
   knowledgeItems: [],
   messages: [],
   notifications: [],

@@ -9,6 +9,9 @@ verify_jwt = false
 [functions.gmail-sync]
 verify_jwt = false
 
+[functions.drive-sync]
+verify_jwt = false
+
 [functions.source-refresh]
 verify_jwt = false
 

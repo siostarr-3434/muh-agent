@@ -69,6 +69,22 @@ export interface DashboardMessage {
   extracted: Record<string, unknown>
 }
 
+export interface ProviderFile {
+  id: string
+  accountId: string
+  accountEmail: string
+  classification: string
+  extracted: Record<string, unknown>
+  lastSeenAt: string
+  mimeType: string
+  modifiedAt?: string
+  name: string
+  provider: 'Drive' | 'Gmail' | 'Upload'
+  sizeBytes?: number
+  status: 'metadata' | 'review_required' | 'ignored' | 'failed'
+  webUrl?: string
+}
+
 export interface NotificationItem {
   id: string
   severity: 'info' | 'warning' | 'critical'

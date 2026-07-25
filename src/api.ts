@@ -27,6 +27,21 @@ export interface DashboardResponse {
     snippet: string | null
     subject: string | null
   }>
+  files: Array<{
+    account_id: string
+    classification: string | null
+    extracted_data: Record<string, unknown>
+    id: string
+    last_seen_at: string
+    mime_type: string
+    modified_at: string | null
+    name: string
+    provider: string
+    provider_file_id: string
+    size_bytes: number | null
+    status: string
+    web_url: string | null
+  }>
   notifications: Array<{
     body: string
     created_at: string

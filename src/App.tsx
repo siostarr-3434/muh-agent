@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError, beginGmailConnection, createKnowledgeItem, decideApproval, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
-import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, SourceRecord, ViewId } from './types'
+import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, ProviderFile, SourceRecord, ViewId } from './types'
 
 const nav: Array<{ id: ViewId; label: string; icon: string }> = [
   { id: 'overview', label: 'Genel Bakış', icon: '⌂' },
@@ -210,6 +210,24 @@ function mapDashboard(payload: DashboardResponse) {
       subject: item.subject ?? '(konu yok)',
     }
   })
+  const liveFiles: ProviderFile[] = payload.files.map((item) => {
+    const status = ['metadata', 'review_required', 'ignored', 'failed'].includes(item.status) ? item.status as ProviderFile['status'] : 'metadata'
+    return {
+      accountEmail: accountsById.get(item.account_id) ?? 'Bilinmeyen hesap',
+      accountId: item.account_id,
+      classification: item.classification ?? 'drive_document',
+      extracted: item.extracted_data ?? {},
+      id: item.id,
+      lastSeenAt: item.last_seen_at,
+      mimeType: item.mime_type,
+      modifiedAt: item.modified_at ?? undefined,
+      name: item.name,
+      provider: item.provider === 'gmail' ? 'Gmail' : item.provider === 'upload' ? 'Upload' : 'Drive',
+      sizeBytes: typeof item.size_bytes === 'number' ? item.size_bytes : undefined,
+      status,
+      webUrl: item.web_url ?? undefined,
+    }
+  })
   const liveNotifications: NotificationItem[] = payload.notifications.map((item) => ({
     body: item.body,
     createdAt: item.created_at,
@@ -247,7 +265,7 @@ function mapDashboard(payload: DashboardResponse) {
       title: item.title,
     }
   })
-  return { accounts: liveAccounts, approvals: liveApprovals, deadlines: liveDeadlines, knowledge: liveKnowledge, messages: liveMessages, notifications: liveNotifications, obligations: liveObligations, sources: liveSources }
+  return { accounts: liveAccounts, approvals: liveApprovals, deadlines: liveDeadlines, files: liveFiles, knowledge: liveKnowledge, messages: liveMessages, notifications: liveNotifications, obligations: liveObligations, sources: liveSources }
 }
 
 function EvidencePill({ level }: { level: EvidenceLevel }) {
@@ -300,6 +318,7 @@ function App() {
   const activeObligations = liveData?.obligations ?? obligations
   const activeDeadlines = liveData?.deadlines ?? deadlines
   const activeAccounts = liveData?.accounts ?? mailAccounts
+  const activeFiles = liveData?.files ?? []
   const activeKnowledge = liveData?.knowledge ?? []
   const activeMessages = liveData?.messages ?? []
   const activeNotifications = liveData?.notifications ?? []
@@ -399,14 +418,14 @@ function App() {
     switch (view) {
       case 'inbox': return <InboxView accounts={activeAccounts} live={liveMode} messageCount={liveCounts.messages} messages={activeMessages} />
       case 'payments': return <PaymentsView items={activeObligations} live={liveMode} onOpenApprovals={() => setView('approvals')} />
-      case 'documents': return <DocumentsView documentCount={liveCounts.documents} live={liveMode} />
+      case 'documents': return <DocumentsView documentCount={liveCounts.documents} files={activeFiles} live={liveMode} />
       case 'deadlines': return <DeadlinesView items={activeDeadlines} live={liveMode} />
       case 'life': return <LifeRadarView knowledge={activeKnowledge} live={liveMode} notifications={activeNotifications} onOpenSettings={() => setView('settings')} />
       case 'approvals': return <ApprovalsView items={approvalsState} live={liveMode} onApprove={approve} />
       case 'sources': return <SourcesView sources={activeSources} />
       case 'settings': return <SettingsView accounts={activeAccounts} knowledge={activeKnowledge} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSaveKnowledge={saveKnowledge} onSignOut={leaveSession} />
       default:
-        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} live={liveMode} loginRequired={loginRequired} notifications={activeNotifications} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
+        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} documentCount={liveCounts.documents} live={liveMode} loginRequired={loginRequired} notifications={activeNotifications} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
     }
   })()
 
@@ -577,7 +596,7 @@ function PageIntro({ eyebrow, title, detail, action }: { eyebrow: string; title:
   return <div className="page-intro"><div><div className="eyebrow">{eyebrow}</div><h2>{title}</h2><p>{detail}</p></div>{action}</div>
 }
 
-function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, loginRequired, notifications, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; live: boolean; loginRequired: boolean | undefined; notifications: NotificationItem[]; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
+function OverviewView({ accounts, approvals, deadlines: deadlineItems, documentCount, live, loginRequired, notifications, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; documentCount: number; live: boolean; loginRequired: boolean | undefined; notifications: NotificationItem[]; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
   const dueSoon = deadlineItems.filter((item) => item.status !== 'done' && daysUntil(item.date) <= 7).length
   const totalOpen = obligationItems.filter((item) => item.status === 'open' || item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0)
   const connectedAccounts = accounts.filter((item) => item.status === 'connected').length
@@ -605,7 +624,7 @@ function OverviewView({ accounts, approvals, deadlines: deadlineItems, live, log
       </section>
     </div>
     <div className="lower-grid">
-      <section className="panel connection-panel"><div className="panel-head"><div><div className="eyebrow">VERİ KAYNAKLARI</div><h3>Bağlantı durumu</h3></div><button className="text-button" onClick={() => onNavigate('settings')}>Kurulum →</button></div><div className="connection-row"><span className="connection-icon gmail">G</span><div><strong>Gmail hesapları</strong><p>{connectedAccounts ? `${connectedAccounts} salt-okunur hesap bağlı` : '4 hesap için OAuth gerekli'}</p></div><span className={`pill evidence-${connectedAccounts ? 'verified' : 'review'}`}>{connectedAccounts ? 'Bağlı' : 'Bağlanmadı'}</span></div><div className="connection-row"><span className="connection-icon vault">▤</span><div><strong>Evrak kasası</strong><p>Dosya yükleme ve OCR beklemede</p></div><span className="pill evidence-review">Kurulmadı</span></div></section>
+      <section className="panel connection-panel"><div className="panel-head"><div><div className="eyebrow">VERİ KAYNAKLARI</div><h3>Bağlantı durumu</h3></div><button className="text-button" onClick={() => onNavigate('settings')}>Kurulum →</button></div><div className="connection-row"><span className="connection-icon gmail">G</span><div><strong>Gmail hesapları</strong><p>{connectedAccounts ? `${connectedAccounts} salt-okunur hesap bağlı` : '4 hesap için OAuth gerekli'}</p></div><span className={`pill evidence-${connectedAccounts ? 'verified' : 'review'}`}>{connectedAccounts ? 'Bağlı' : 'Bağlanmadı'}</span></div><div className="connection-row"><span className="connection-icon vault">▤</span><div><strong>Evrak kasası</strong><p>{documentCount ? `${documentCount} Drive dosya metaverisi görüldü` : live ? 'Drive worker dosya bekliyor' : 'Dosya yükleme ve OCR beklemede'}</p></div><span className={`pill evidence-${documentCount ? 'verified' : 'review'}`}>{documentCount ? 'Aktif' : 'Bekliyor'}</span></div></section>
       <section className="panel principle-panel"><div className="principle-mark">◈</div><div><div className="eyebrow">TEMEL KURAL</div><h3>Oku → kanıtla → öner → onay al</h3><p>Ajan hiçbir para transferini, resmi gönderimi veya hesap bağlantısını sessizce yapmaz. Her kritik adım görünür onay ister.</p></div></section>
     </div>
   </>
@@ -629,8 +648,15 @@ function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; l
   return <><PageIntro eyebrow="PARA VE YÜKÜMLÜLÜKLER" title="Ödeme kararı senden çıkar" detail="Ajan tutarı ve tarihi düzenler; parayı göndermek için ayrı bir insan onayı gerekir." action={<button className="button primary" onClick={onOpenApprovals}>Onayları aç →</button>} /><div className="table-panel panel"><div className="table-toolbar"><div><strong>{items.length} kayıt</strong><span> · {live ? 'canlı kasa / kanıt seviyeleri görünür' : 'tamamı demo/inceleme etiketli'}</span></div><button className="button secondary" onClick={() => undefined}>CSV içe aktar (hazırlık)</button></div><div className="obligation-list">{items.length ? items.map((item) => <div className="obligation-row" key={item.id}><div className="obligation-symbol">{item.category === 'Ceza' ? '!' : item.category === 'Vergi' ? '◈' : '€'}</div><div className="obligation-main"><strong>{item.title}</strong><span>{item.authority} · {item.note}</span></div><div className="obligation-amount">{item.amount ? formatEuro(item.amount) : 'Belirsiz'}</div><div className="obligation-date"><strong>{item.dueDate}</strong><span>{statusLabel[item.status]}</span></div><EvidencePill level={item.evidence} /></div>) : <div className="empty-inline">Yükümlülük kaydı yok.</div>}</div></div><div className="info-callout"><strong>Ödeme entegrasyonu kapalı.</strong><span>Bu sürüm sadece kayıt + onay kararı tutar. Banka bağlantısı kurulsa bile transfer öncesi alıcı, IBAN, tutar ve son tarih yeniden doğrulanır.</span></div></>
 }
 
-function DocumentsView({ documentCount, live }: { documentCount: number; live: boolean }) {
-  return <><PageIntro eyebrow="EVRAK KASASI" title="Belgeleri tek bir güven zincirinde topla" detail={`${live ? `${documentCount} belge metaverisi kasada. ` : ''}Belgeler şifreli saklama, kaynak hash'i ve erişim günlüğü ile yönetilecek.`} action={<button className="button primary">Belge seç (hazırlık)</button>} /><div className="dropzone"><div className="drop-icon">＋</div><h3>Yükleme güvenlik kapısı henüz kapalı</h3><p>Gerçek yükleme etkinleştirilmeden önce maksimum boyut, MIME doğrulaması, virüs taraması ve saklama süresi uygulanacak.</p><EvidencePill level="review" /></div><div className="document-grid"><DocumentCard title="IND yazısı" detail="Avukat tarafından sağlanacak" status="Belge bekleniyor" /><DocumentCard title="CJIB bildirimi" detail="Gmail / kullanıcı yüklemesi" status="Kaynak doğrulanacak" /><DocumentCard title="İş sözleşmesi ve maaş kanıtı" detail="IND dosyası" status="Hassas veri" /></div></>
+function formatFileSize(sizeBytes?: number) {
+  if (sizeBytes === undefined) return 'Boyut yok'
+  if (sizeBytes < 1024) return `${sizeBytes} B`
+  if (sizeBytes < 1_048_576) return `${(sizeBytes / 1024).toFixed(1)} KB`
+  return `${(sizeBytes / 1_048_576).toFixed(1)} MB`
+}
+
+function DocumentsView({ documentCount, files, live }: { documentCount: number; files: ProviderFile[]; live: boolean }) {
+  return <><PageIntro eyebrow="EVRAK KASASI" title={live ? `${documentCount} Drive/belge metadata kaydı` : 'Belgeleri tek bir güven zincirinde topla'} detail={`${live ? 'Bağlı Drive hesaplarından dosya içerikleri indirilmeden metadata izleniyor. ' : ''}Belgeler şifreli saklama, kaynak hash'i ve erişim günlüğü ile yönetilecek.`} action={<button className="button primary">Belge seç (hazırlık)</button>} /><section className="panel drive-file-panel"><div className="panel-head"><div><div className="eyebrow">DRIVE METADATA</div><h3>Bağlı hesaplarda görülen son dosyalar</h3></div><span className={`pill evidence-${files.length ? 'verified' : 'review'}`}>{files.length} kayıt</span></div><div className="file-list">{files.length ? files.map((file) => <div className="file-row" key={file.id}><div className={`file-icon ${file.status === 'review_required' ? 'hot' : ''}`}>▤</div><div className="file-main"><div className="message-meta"><span>{file.accountEmail}</span><span>{file.modifiedAt ? new Date(file.modifiedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span><span>{formatFileSize(file.sizeBytes)}</span></div><strong>{file.name}</strong><p>{file.mimeType}</p></div><div className="file-actions"><span className={`pill evidence-${file.status === 'review_required' ? 'review' : 'verified'}`}>{file.classification}</span>{file.webUrl && <a href={file.webUrl} target="_blank" rel="noreferrer">Drive’da aç ↗</a>}</div></div>) : <div className="empty-state large"><div className="empty-icon">▤</div><h3>{live ? 'Drive yetkisi var; metadata worker ilk sonucu bekliyor' : 'Drive hesabı bağlı değil'}</h3><p>Worker 30 dakikada bir Google Drive dosya listesini salt-okunur okur. Bu adım dosya içeriği indirmez; sadece hesap, dosya adı, tür ve değişiklik zamanı kaydeder.</p><EvidencePill level="review" /></div>}</div></section><div className="dropzone"><div className="drop-icon">＋</div><h3>Manuel yükleme güvenlik kapısı henüz kapalı</h3><p>Gerçek yükleme etkinleştirilmeden önce maksimum boyut, MIME doğrulaması, virüs taraması ve saklama süresi uygulanacak.</p><EvidencePill level="review" /></div><div className="document-grid"><DocumentCard title="IND yazısı" detail="Avukat tarafından sağlanacak" status="Belge bekleniyor" /><DocumentCard title="CJIB bildirimi" detail="Gmail / kullanıcı yüklemesi" status="Kaynak doğrulanacak" /><DocumentCard title="İş sözleşmesi ve maaş kanıtı" detail="IND dosyası" status="Hassas veri" /></div></>
 }
 
 function DocumentCard({ title, detail, status }: { title: string; detail: string; status: string }) {
