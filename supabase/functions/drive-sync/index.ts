@@ -133,6 +133,7 @@ function classifyFile(file: DriveFile) {
 
 async function driveInboxFolders(accessToken: string) {
   const params = new URLSearchParams({
+    corpora: 'allDrives',
     fields: 'files(id,name)',
     includeItemsFromAllDrives: 'true',
     pageSize: '10',
@@ -141,8 +142,9 @@ async function driveInboxFolders(accessToken: string) {
       'and',
       "mimeType = 'application/vnd.google-apps.folder'",
       'and',
-      `name = ${driveQueryString(driveInboxFolderName)}`,
+      `name contains ${driveQueryString(driveInboxFolderName)}`,
     ].join(' '),
+    spaces: 'drive',
     supportsAllDrives: 'true',
   })
   const response = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
@@ -150,18 +152,22 @@ async function driveInboxFolders(accessToken: string) {
   })
   if (!response.ok) throw new Error(`drive_folder_query_failed_${response.status}`)
   const payload = await response.json() as { files?: DriveFolder[] }
-  return (payload.files ?? []).filter((folder) => folder.id).map((folder) => folder.id!)
+  return (payload.files ?? [])
+    .filter((folder) => folder.id && folder.name?.trim().toLocaleLowerCase('nl-NL') === driveInboxFolderName.toLocaleLowerCase('nl-NL'))
+    .map((folder) => folder.id!)
 }
 
 async function driveFiles(accessToken: string, folderIds: string[]) {
   if (folderIds.length === 0) return []
   const parentQuery = folderIds.map((folderId) => `${driveQueryString(folderId)} in parents`).join(' or ')
   const params = new URLSearchParams({
+    corpora: 'allDrives',
     fields: 'files(id,name,mimeType,modifiedTime,size,webViewLink)',
     includeItemsFromAllDrives: 'true',
     orderBy: 'modifiedTime desc',
     pageSize: String(driveFileLimit),
     q: `(${parentQuery}) and ${driveMetadataQuery}`,
+    spaces: 'drive',
     supportsAllDrives: 'true',
   })
   const response = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
