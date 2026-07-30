@@ -32,12 +32,16 @@ export interface DashboardResponse {
     classification: string | null
     extracted_data: Record<string, unknown>
     id: string
+    document_id: string | null
+    extracted_at: string | null
     last_seen_at: string
     mime_type: string
     modified_at: string | null
     name: string
     provider: string
     provider_file_id: string
+    extraction_error_code: string | null
+    extraction_status: string | null
     size_bytes: number | null
     status: string
     web_url: string | null
@@ -179,6 +183,13 @@ export function beginGmailConnection(includeDrive = false) {
 export function createKnowledgeItem(input: CreateKnowledgeInput) {
   return request<{ item: DashboardResponse['knowledgeItems'][number] }>('/api/knowledge', {
     body: JSON.stringify(input),
+    method: 'POST',
+  })
+}
+
+export function extractDocuments(limit = 5) {
+  return request<{ completedAt: string; files: Array<{ documentId?: string; error?: string; fileId: string; status: string }> }>('/api/documents/extract', {
+    body: JSON.stringify({ limit }),
     method: 'POST',
   })
 }

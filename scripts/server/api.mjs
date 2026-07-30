@@ -105,7 +105,7 @@ async function dashboard(request, response, config) {
     context.client.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('provider_files').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-    context.client.from('provider_files').select('id,account_id,provider,provider_file_id,name,mime_type,size_bytes,modified_at,web_url,classification,extracted_data,status,last_seen_at').eq('user_id', userId).order('modified_at', { ascending: false, nullsFirst: false }).limit(50),
+    context.client.from('provider_files').select('id,account_id,provider,provider_file_id,name,mime_type,size_bytes,modified_at,web_url,classification,extracted_data,status,last_seen_at,document_id,extraction_status,extraction_error_code,extracted_at').eq('user_id', userId).order('modified_at', { ascending: false, nullsFirst: false }).limit(50),
     context.client.from('email_messages').select('id,account_id,provider_message_id,from_address,subject,received_at,snippet,classification,extracted_data,processing_status').eq('user_id', userId).order('received_at', { ascending: false, nullsFirst: false }).limit(50),
     context.client.from('notifications').select('id,severity,title,body,source_url,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(25),
     context.client.from('source_catalog').select('id,name,domain,purpose,trust,enabled_by_default').order('id', { ascending: true }),
@@ -178,6 +178,33 @@ async function createKnowledge(request, response, config) {
   }
 
   writeJson(response, 201, { item: data }, context.state)
+  return true
+}
+
+async function extractDocuments(request, response, config) {
+  const state = createResponseState()
+  if (!method(request, response, ['POST'], state)) return true
+  if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
+  if (!withinRateLimit(request, 'document-extract', 4, 60_000)) {
+    writeJson(response, 429, { error: 'rate_limited' }, state, { 'Retry-After': '60' })
+    return true
+  }
+  const context = await authenticated(request, response, config)
+  if (!context) return true
+  const body = await readJson(request)
+  const limit = Number.isInteger(body?.limit) ? Math.max(1, Math.min(8, body.limit)) : 5
+  const { data, error } = await context.client.functions.invoke('document-extract', {
+    body: { limit },
+    headers: { Origin: config.appOrigin },
+  })
+  if (error) {
+    const edgeError = await invokedFunctionErrorCode(error)
+    const code = edgeError === 'ocr_not_configured' || edgeError === 'rate_limited' ? edgeError : 'document_extract_failed'
+    console.error(code)
+    writeJson(response, edgeError === 'ocr_not_configured' ? 503 : 502, { error: code }, context.state)
+    return true
+  }
+  writeJson(response, 200, data, context.state)
   return true
 }
 
@@ -400,6 +427,7 @@ export async function handleApplicationRoute(request, response, config, path) {
     if (path === '/api/auth/password') return await setPassword(request, response, config)
     if (path === '/api/auth/signout') return await signOut(request, response, config)
     if (path === '/api/dashboard') return await dashboard(request, response, config)
+    if (path === '/api/documents/extract') return await extractDocuments(request, response, config)
     if (path === '/api/gmail/connect') return await gmailConnect(request, response, config)
     if (path === '/api/knowledge') return await createKnowledge(request, response, config)
     if (path === '/auth/callback') return await authCallback(request, response, config)

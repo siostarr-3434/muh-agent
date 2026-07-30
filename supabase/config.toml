@@ -12,6 +12,9 @@ verify_jwt = false
 [functions.drive-sync]
 verify_jwt = false
 
+[functions.document-extract]
+verify_jwt = false
+
 [functions.life-watchdog]
 verify_jwt = false
 

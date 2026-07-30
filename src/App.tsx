@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ApiError, beginGmailConnection, createKnowledgeItem, decideApproval, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
+import { ApiError, beginGmailConnection, createKnowledgeItem, decideApproval, extractDocuments, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
 import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, ProviderFile, SourceRecord, ViewId } from './types'
 
@@ -45,6 +45,14 @@ const processingLabel: Record<DashboardMessage['status'], string> = {
   processing: 'İşleniyor',
   queued: 'Kuyrukta',
   review_required: 'İnceleme',
+}
+
+const fileExtractionLabel: Record<ProviderFile['extractionStatus'], string> = {
+  extracted: 'Belge okundu',
+  failed: 'Okuma hatası',
+  pending: 'Okuma bekliyor',
+  processing: 'Okunuyor',
+  skipped: 'İlgisiz / atlandı',
 }
 
 const lifeRadarItems = [
@@ -257,11 +265,16 @@ function mapDashboard(payload: DashboardResponse) {
   })
   const liveFiles: ProviderFile[] = payload.files.map((item) => {
     const status = ['metadata', 'review_required', 'ignored', 'failed'].includes(item.status) ? item.status as ProviderFile['status'] : 'metadata'
+    const extractionStatus = ['pending', 'processing', 'extracted', 'skipped', 'failed'].includes(item.extraction_status ?? '') ? item.extraction_status as ProviderFile['extractionStatus'] : 'pending'
     return {
       accountEmail: accountsById.get(item.account_id) ?? 'Bilinmeyen hesap',
       accountId: item.account_id,
       classification: item.classification ?? 'drive_document',
+      documentId: item.document_id ?? undefined,
       extracted: item.extracted_data ?? {},
+      extractedAt: item.extracted_at ?? undefined,
+      extractionErrorCode: item.extraction_error_code ?? undefined,
+      extractionStatus,
       id: item.id,
       lastSeenAt: item.last_seen_at,
       mimeType: item.mime_type,
@@ -326,6 +339,7 @@ function App() {
   const [approvalsState, setApprovalsState] = useState<ApprovalItem[]>(initialApprovals)
   const [loginOpen, setLoginOpen] = useState(false)
   const [toast, setToast] = useState(initialNotice)
+  const [extractingDocuments, setExtractingDocuments] = useState(false)
   const [chatInput, setChatInput] = useState('')
   const [chatMessages, setChatMessages] = useState([
     { role: 'agent', text: 'Merhaba. Gerçek hesap, belge ve resmi kaynak doğrulanmadan kesin karar vermem; hiçbir dış işlemi sessizce yürütmem.' },
@@ -373,6 +387,15 @@ function App() {
   const showToast = (message: string) => {
     setToast(message)
     window.setTimeout(() => setToast(''), 3200)
+  }
+
+  const refreshDashboard = async () => {
+    const payload = await getDashboard()
+    const mapped = mapDashboard(payload)
+    setLiveData(mapped)
+    setLiveCounts(payload.counts)
+    setApprovalsState(mapped.approvals)
+    return mapped
   }
 
   const approve = async (id: string) => {
@@ -435,6 +458,30 @@ function App() {
     }
   }
 
+  const runDocumentExtraction = async () => {
+    if (!liveMode) {
+      showToast(loginRequired ? 'Belge okuma için önce dashboarddan oturum açın.' : 'Belge okuma canlı ortamda çalışır.')
+      if (loginRequired) setLoginOpen(true)
+      return
+    }
+    setExtractingDocuments(true)
+    try {
+      const result = await extractDocuments(5)
+      await refreshDashboard()
+      const failed = result.files.filter((file) => file.status === 'failed').length
+      if (result.files.length === 0) showToast('Okunacak yeni Drive belgesi yok.')
+      else if (failed) showToast(`${result.files.length - failed} belge okundu, ${failed} belge hata verdi. Detay Evrak Kasası’nda.`)
+      else showToast(`${result.files.length} belge okundu ve sisteme işlendi.`)
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : 'document_extract_failed'
+      showToast(code === 'ocr_not_configured'
+        ? 'Belge OCR motoru için OpenAI anahtarı eksik. Kod hazır; anahtar eklenince okuyacak.'
+        : 'Belge okuma başlatılamadı; veri değiştirilmedi.')
+    } finally {
+      setExtractingDocuments(false)
+    }
+  }
+
   const leaveSession = async () => {
     try {
       await signOut()
@@ -463,7 +510,7 @@ function App() {
     switch (view) {
       case 'inbox': return <InboxView accounts={activeAccounts} live={liveMode} messageCount={liveCounts.messages} messages={activeMessages} />
       case 'payments': return <PaymentsView items={activeObligations} live={liveMode} onOpenApprovals={() => setView('approvals')} />
-      case 'documents': return <DocumentsView documentCount={liveCounts.documents} files={activeFiles} live={liveMode} />
+      case 'documents': return <DocumentsView documentCount={liveCounts.documents} extracting={extractingDocuments} files={activeFiles} live={liveMode} onExtract={runDocumentExtraction} />
       case 'deadlines': return <DeadlinesView items={activeDeadlines} live={liveMode} />
       case 'life': return <LifeRadarView knowledge={activeKnowledge} live={liveMode} notifications={activeNotifications} onOpenSettings={() => setView('settings')} />
       case 'approvals': return <ApprovalsView items={approvalsState} live={liveMode} onApprove={approve} />
@@ -700,8 +747,29 @@ function formatFileSize(sizeBytes?: number) {
   return `${(sizeBytes / 1_048_576).toFixed(1)} MB`
 }
 
-function DocumentsView({ documentCount, files, live }: { documentCount: number; files: ProviderFile[]; live: boolean }) {
-  return <><PageIntro eyebrow="EVRAK KASASI" title={live ? `${documentCount} Drive/belge metadata kaydı` : 'Belgeleri tek bir güven zincirinde topla'} detail={`${live ? 'Bağlı Drive hesaplarından dosya içerikleri indirilmeden metadata izleniyor. ' : ''}Belgeler şifreli saklama, kaynak hash'i ve erişim günlüğü ile yönetilecek.`} action={<button className="button primary">Belge seç (hazırlık)</button>} /><section className="panel drive-file-panel"><div className="panel-head"><div><div className="eyebrow">DRIVE METADATA</div><h3>Bağlı hesaplarda görülen son dosyalar</h3></div><span className={`pill evidence-${files.length ? 'verified' : 'review'}`}>{files.length} kayıt</span></div><div className="file-list">{files.length ? files.map((file) => <div className="file-row" key={file.id}><div className={`file-icon ${file.status === 'review_required' ? 'hot' : ''}`}>▤</div><div className="file-main"><div className="message-meta"><span>{file.accountEmail}</span><span>{file.modifiedAt ? new Date(file.modifiedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span><span>{formatFileSize(file.sizeBytes)}</span></div><strong>{file.name}</strong><p>{file.mimeType}</p></div><div className="file-actions"><span className={`pill evidence-${file.status === 'review_required' ? 'review' : 'verified'}`}>{file.classification}</span>{file.webUrl && <a href={file.webUrl} target="_blank" rel="noreferrer">Drive’da aç ↗</a>}</div></div>) : <div className="empty-state large"><div className="empty-icon">▤</div><h3>{live ? 'Drive yetkisi var; metadata worker ilk sonucu bekliyor' : 'Drive hesabı bağlı değil'}</h3><p>Worker 30 dakikada bir Google Drive dosya listesini salt-okunur okur. Bu adım dosya içeriği indirmez; sadece hesap, dosya adı, tür ve değişiklik zamanı kaydeder.</p><EvidencePill level="review" /></div>}</div></section><div className="dropzone"><div className="drop-icon">＋</div><h3>Manuel yükleme güvenlik kapısı henüz kapalı</h3><p>Gerçek yükleme etkinleştirilmeden önce maksimum boyut, MIME doğrulaması, virüs taraması ve saklama süresi uygulanacak.</p><EvidencePill level="review" /></div><div className="document-grid"><DocumentCard title="IND yazısı" detail="Avukat tarafından sağlanacak" status="Belge bekleniyor" /><DocumentCard title="CJIB bildirimi" detail="Gmail / kullanıcı yüklemesi" status="Kaynak doğrulanacak" /><DocumentCard title="İş sözleşmesi ve maaş kanıtı" detail="IND dosyası" status="Hassas veri" /></div></>
+function extractionRecord(file: ProviderFile) {
+  const value = file.extracted.extraction
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function extractionLine(file: ProviderFile) {
+  const extraction = extractionRecord(file)
+  if (!extraction) return null
+  const amount = typeof extraction.amount_eur === 'number' ? formatEuro(extraction.amount_eur) : null
+  const dueDate = typeof extraction.due_date === 'string' ? extraction.due_date : null
+  const objection = typeof extraction.objection_deadline === 'string' ? extraction.objection_deadline : null
+  return [amount ? `Tutar ${amount}` : null, dueDate ? `Son ödeme ${dueDate}` : null, objection ? `İtiraz ${objection}` : null].filter(Boolean).join(' · ')
+}
+
+function extractionSummary(file: ProviderFile) {
+  const extraction = extractionRecord(file)
+  if (!extraction) return file.extractionErrorCode ? `Hata: ${file.extractionErrorCode}` : 'İçerik okuma bekliyor.'
+  return typeof extraction.summary_tr === 'string' ? extraction.summary_tr : 'Belge okundu; özet bekleniyor.'
+}
+
+function DocumentsView({ documentCount, extracting, files, live, onExtract }: { documentCount: number; extracting: boolean; files: ProviderFile[]; live: boolean; onExtract: () => void | Promise<void> }) {
+  const readCount = files.filter((file) => file.extractionStatus === 'extracted').length
+  return <><PageIntro eyebrow="EVRAK KASASI" title={live ? `${documentCount} belge / Drive kaydı` : 'Belgeleri tek bir güven zincirinde topla'} detail={live ? 'Drive’daki PDF/JPG/PNG belgeleri içerik olarak okunur; kurum, borç/ceza türü, tutar, son tarih ve itiraz süresi sisteme işlenir.' : 'Canlı ortamda Drive belgesi OCR ile okunup yükümlülük ve süre kayıtlarına dönüştürülür.'} action={<button className="button primary" disabled={extracting} onClick={() => void onExtract()}>{extracting ? 'Belgeler okunuyor…' : 'Belgeleri şimdi oku'}</button>} /><section className="panel drive-file-panel"><div className="panel-head"><div><div className="eyebrow">BELGE OKUMA DURUMU</div><h3>Drive’da görülen ve OCR’a giren evraklar</h3></div><span className={`pill evidence-${readCount ? 'verified' : 'review'}`}>{readCount} okundu / {files.length} kayıt</span></div><div className="file-list">{files.length ? files.map((file) => { const line = extractionLine(file); const extraction = extractionRecord(file); return <div className="file-row file-row-expanded" key={file.id}><div className={`file-icon ${file.status === 'review_required' || file.extractionStatus === 'extracted' ? 'hot' : ''}`}>▤</div><div className="file-main"><div className="message-meta"><span>{file.accountEmail}</span><span>{file.modifiedAt ? new Date(file.modifiedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span><span>{formatFileSize(file.sizeBytes)}</span></div><strong>{file.name}</strong><p>{extractionSummary(file)}</p>{line && <small className="extract-line">{line}</small>}{extraction && typeof extraction.action_summary_tr === 'string' && <small className="extract-action">Aksiyon: {extraction.action_summary_tr}</small>}</div><div className="file-actions"><span className={`pill evidence-${file.extractionStatus === 'extracted' ? 'verified' : file.extractionStatus === 'failed' ? 'review' : 'demo'}`}>{fileExtractionLabel[file.extractionStatus]}</span><span className={`pill evidence-${file.status === 'review_required' ? 'review' : 'verified'}`}>{file.classification}</span>{file.extractedAt && <span>{new Date(file.extractedAt).toLocaleString('tr-TR')}</span>}{file.webUrl && <a href={file.webUrl} target="_blank" rel="noreferrer">Drive’da aç ↗</a>}</div></div> }) : <div className="empty-state large"><div className="empty-icon">▤</div><h3>{live ? 'Drive yetkisi var; belge bekleniyor' : 'Drive hesabı bağlı değil'}</h3><p>Belgeleri bağlı Google Drive hesabına yüklediğinde worker dosyayı indirip OCR/extraction kuyruğuna alır.</p><EvidencePill level="review" /></div>}</div></section><div className="dropzone"><div className="drop-icon">＋</div><h3>Telefonla tara → Drive’a koy → bu ekranda “Belgeleri şimdi oku”</h3><p>En hızlı yol Google Drive Scan ile PDF oluşturmak. Sistem dosya adından değil, belgenin içeriğinden kurum/tutar/tarih çıkarmak için çalışır.</p><EvidencePill level="review" /></div><div className="document-grid"><DocumentCard title="Ceza / CJIB" detail="Tutar, son ödeme ve bezwaar tarihi çıkarılır" status="OCR" /><DocumentCard title="Vergi / belediye" detail="Aanslag, ödeme ve itiraz süresi ayrılır" status="OCR" /><DocumentCard title="IND / mahkeme" detail="Belge teslim tarihi ve aksiyon listesi çıkarılır" status="İnceleme" /></div></>
 }
 
 function DocumentCard({ title, detail, status }: { title: string; detail: string; status: string }) {

@@ -74,7 +74,11 @@ export interface ProviderFile {
   accountId: string
   accountEmail: string
   classification: string
+  documentId?: string
   extracted: Record<string, unknown>
+  extractedAt?: string
+  extractionErrorCode?: string
+  extractionStatus: 'pending' | 'processing' | 'extracted' | 'skipped' | 'failed'
   lastSeenAt: string
   mimeType: string
   modifiedAt?: string

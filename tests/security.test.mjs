@@ -35,6 +35,7 @@ test('Edge Function JWT boundaries are explicit', async () => {
   assert.match(config, /\[functions\.gmail-oauth-callback\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.gmail-sync\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.drive-sync\][\s\S]*?verify_jwt\s*=\s*false/)
+  assert.match(config, /\[functions\.document-extract\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.life-watchdog\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.source-refresh\][\s\S]*?verify_jwt\s*=\s*false/)
   assert.match(config, /\[functions\.approval-decision\][\s\S]*?verify_jwt\s*=\s*true/)
@@ -67,6 +68,19 @@ test('Gmail OAuth start validates configuration before creating an OAuth state',
   assert.match(start, /\.eq\('provider', 'gmail'\)/)
   assert.match(start, /\.is\('consumed_at', null\)/)
   assert.match(start, /oauth_not_configured/)
+})
+
+test('document extraction uses custom auth and masks sensitive identifiers', async () => {
+  const extract = await readFile(resolve(root, 'supabase/functions/document-extract/index.ts'), 'utf8')
+
+  assert.match(extract, /workerAuthorized/)
+  assert.match(extract, /admin\.auth\.getUser/)
+  assert.match(extract, /openai_api_key_missing/)
+  assert.match(extract, /BSN, tam IBAN, tam dosya numarası veya kimlik numarasını döndürme/)
+  assert.match(extract, /payment_required/)
+  assert.match(extract, /objection_deadline/)
+  assert.match(extract, /persistObligation/)
+  assert.match(extract, /persistDeadline/)
 })
 
 test('package versions are reproducible', async () => {
