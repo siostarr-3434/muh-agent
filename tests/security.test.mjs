@@ -79,8 +79,28 @@ test('document extraction uses custom auth and masks sensitive identifiers', asy
   assert.match(extract, /BSN, tam IBAN, tam dosya numarası veya kimlik numarasını döndürme/)
   assert.match(extract, /payment_required/)
   assert.match(extract, /objection_deadline/)
+  assert.match(extract, /paymentGuidanceFor/)
+  assert.match(extract, /payment_guidance/)
+  assert.match(extract, /betaling.*regeling|betalingsregeling/i)
   assert.match(extract, /persistObligation/)
   assert.match(extract, /persistDeadline/)
+})
+
+test('payment calendar shows official payment guidance and safe export', async () => {
+  const app = await readFile(resolve(root, 'src/App.tsx'), 'utf8')
+  const api = await readFile(resolve(root, 'src/api.ts'), 'utf8')
+  const server = await readFile(resolve(root, 'scripts/server/api.mjs'), 'utf8')
+  const migrations = await readMigrationsSql()
+
+  assert.match(migrations, /payment_guidance\s+jsonb/i)
+  assert.match(server, /payment_guidance/)
+  assert.match(api, /payment_guidance/)
+  assert.match(app, /Tek ödeme takvimi/)
+  assert.match(app, /downloadPaymentCalendar/)
+  assert.match(app, /muh-agent-odeme-takvimi\.ics/)
+  assert.match(app, /Amsterdam Mijn Belastingen/)
+  assert.match(app, /MijnDenHaag/)
+  assert.match(app, /CJIB betalen/)
 })
 
 test('package versions are reproducible', async () => {

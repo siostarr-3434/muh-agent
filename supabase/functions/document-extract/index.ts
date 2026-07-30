@@ -55,6 +55,20 @@ interface Extraction {
   title: string
 }
 
+interface PaymentGuidance {
+  bulkPayment?: string
+  installmentSummary?: string
+  objectionUrl?: string
+  paymentMethod?: string
+  paymentPlanUrl?: string
+  paymentUrl?: string
+  portalLabel?: string
+  referenceHint?: string
+  sourceLabel?: string
+  sourceUrl?: string
+  warning?: string
+}
+
 function env(name: string) {
   const value = Deno.env.get(name)
   if (!value) throw new Error(`${name} is not configured`)
@@ -332,6 +346,72 @@ function obligationCategory(type: Extraction['document_type']) {
   return 'other'
 }
 
+function paymentGuidanceFor(extraction: Extraction): PaymentGuidance {
+  const text = `${extraction.authority} ${extraction.title} ${extraction.summary_tr} ${extraction.action_summary_tr ?? ''}`.toLowerCase()
+  const base: PaymentGuidance = {
+    referenceHint: extraction.reference_hint ?? undefined,
+  }
+  if (/\b(cjib|centraal justitieel|verkeersboete|bekeuring)\b/i.test(text)) {
+    return {
+      ...base,
+      bulkPayment: 'Mijn CJIB / resmi CJIB portali açık cezaları birlikte gösterebilir; ödeme öncesi belge numarası ve tutar eşleşmeli.',
+      installmentSummary: 'CJIB’de bazı cezalar için taksit/ödeme planı istenebilir. İtiraz/beroep düşünülüyorsa ödeme planı istemeden önce resmi uyarıyı kontrol et.',
+      objectionUrl: 'https://www.cjib.nl/direct-regelen/ik-ben-het-niet-eens-met-mijn-boete/ik-ben-het-niet-eens-met-een-verkeersboete',
+      paymentMethod: 'CJIB mektubundaki QR/IBAN/betalingskenmerk veya resmi CJIB portali.',
+      paymentPlanUrl: 'https://www.cjib.nl/betalen-in-delen-aanvragen',
+      paymentUrl: 'https://www.cjib.nl/direct-regelen/ik-wil-graag/ik-wil-betalen',
+      portalLabel: 'CJIB betalen',
+      sourceLabel: 'CJIB',
+      sourceUrl: 'https://www.cjib.nl/',
+      warning: 'İtiraz, ödeme ve taksit ayrı kararlar. Resmi mektuptaki kenmerk olmadan ödeme yapma.',
+    }
+  }
+  if (/\b(amsterdam|gemeente amsterdam|belastingbalie)\b/i.test(text)) {
+    return {
+      ...base,
+      bulkPayment: 'Amsterdam Mijn Belastingen açık parkeerbon/belastingaanslag kayıtlarını tek portalda gösterebilir; açık kayıtlar üzerinden toplu ödeme veya düzenleme kontrol edilir.',
+      installmentSummary: 'Parkeerbon için ödeme düzeni en fazla 12 parça ve en az €30/ay; wielklem varsa düzenleme yok.',
+      objectionUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/bezwaar-maken-parkeerbon/',
+      paymentMethod: 'Mijn Belastingen veya mektuptaki betalingskenmerk ile resmi Amsterdam ödeme kanalı.',
+      paymentPlanUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/betalingsregeling-afspreken-parkeerbon/',
+      paymentUrl: 'https://belastingbalie.amsterdam.nl/',
+      portalLabel: 'Amsterdam Mijn Belastingen',
+      sourceLabel: 'Gemeente Amsterdam',
+      sourceUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/parkeerbon-betalen/',
+      warning: 'Parkeerbon ve bezwaar kararını karıştırma; belge tarihi ve aanslagnummer kontrol edilmeli.',
+    }
+  }
+  if (/\b(den haag|denhaag|gemeente den haag|mijndenhaag|haagse)\b/i.test(text)) {
+    return {
+      ...base,
+      bulkPayment: 'MijnDenHaag parkeerbon/fatura gibi açık belediye kayıtlarını gösterebilir. Birden fazla belediye factuur için Den Haag resmi sayfası debiteuren e-posta yolunu belirtir.',
+      installmentSummary: 'Gemeentelijke belasting için en fazla 12 ay ve en az €25/ay; factuur tarafında kişisel bakiye en az €50 ve taksit en az €20 koşulu geçebilir.',
+      objectionUrl: 'https://www.denhaag.nl/nl/parkeren/bezwaar-maken-tegen-een-parkeerbon-naheffingsaanslag/',
+      paymentMethod: 'MijnDenHaag veya mektuptaki betalingskenmerk ile Gemeente Den Haag ödeme kanalı.',
+      paymentPlanUrl: 'https://www.denhaag.nl/nl/belastingen/betalingsregeling-belastingen-aanvragen/',
+      paymentUrl: 'https://www.denhaag.nl/nl/parkeren/parkeerbon-naheffingsaanslag/',
+      portalLabel: 'MijnDenHaag / parkeerbon',
+      sourceLabel: 'Gemeente Den Haag',
+      sourceUrl: 'https://www.denhaag.nl/nl/parkeren/contact-over-parkeren/',
+      warning: 'Parkeerbon bezwaarında süre genelde dagtekening’den 6 hafta; itiraz sürecinde ödeme gerekip gerekmediği resmi sayfadan kontrol edilmeli.',
+    }
+  }
+  if (/\b(belastingdienst|toeslagen|belasting)\b/i.test(text)) {
+    return {
+      ...base,
+      bulkPayment: 'Belastingdienst/Mijn Belastingdienst açık aanslag ve ödeme düzeni için resmi portala yönlendirir.',
+      installmentSummary: 'Vergi ve toeslagen borçlarında ödeme düzeni kişisel duruma göre değişir; geri ödeme riski için tutar ve jaar/kenmerk eşleşmeli.',
+      paymentMethod: 'Resmi Belastingdienst portalı veya mektuptaki betalingskenmerk.',
+      paymentUrl: 'https://www.belastingdienst.nl/wps/wcm/connect/nl/betalen-en-ontvangen/betalen-en-ontvangen',
+      portalLabel: 'Belastingdienst betalen',
+      sourceLabel: 'Belastingdienst',
+      sourceUrl: 'https://www.belastingdienst.nl/',
+      warning: 'Toeslagen değişikliği geç bildirilirse sonradan borç doğabilir.',
+    }
+  }
+  return base
+}
+
 async function existingBySource(admin: Admin, table: 'deadlines' | 'notifications' | 'obligations', userId: string, sourceUrl: string) {
   const { data, error } = await admin.from(table).select('id').eq('user_id', userId).eq('source_url', sourceUrl).limit(1)
   if (error) throw new Error(`${table}_query_failed`)
@@ -341,6 +421,7 @@ async function existingBySource(admin: Admin, table: 'deadlines' | 'notification
 async function persistObligation(admin: Admin, file: ProviderFile, documentId: string, extraction: Extraction) {
   if (!extraction.is_relevant && extraction.amount_eur === null && !extraction.payment_required) return
   if (await existingBySource(admin, 'obligations', file.user_id, file.source_ref)) return
+  const paymentGuidance = paymentGuidanceFor(extraction)
   const { error } = await admin.from('obligations').insert({
     amount: extraction.amount_eur,
     authority: extraction.authority,
@@ -353,8 +434,11 @@ async function persistObligation(admin: Admin, file: ProviderFile, documentId: s
       extraction.summary_tr,
       extraction.action_summary_tr ? `Aksiyon: ${extraction.action_summary_tr}` : null,
       extraction.reference_hint ? `Referans: ${extraction.reference_hint}` : null,
+      paymentGuidance.portalLabel ? `Resmi ödeme kanalı: ${paymentGuidance.portalLabel}.` : null,
+      paymentGuidance.installmentSummary ? `Taksit kontrolü: ${paymentGuidance.installmentSummary}` : null,
       'Ödeme veya itiraz öncesi resmi kanal ayrıca doğrulanmalı.',
     ].filter(Boolean).join(' '),
+    payment_guidance: paymentGuidance,
     source_url: file.source_ref,
     status: 'open',
     title: extraction.title,

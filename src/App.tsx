@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError, beginGmailConnection, createKnowledgeItem, decideApproval, extractDocuments, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
-import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, ProviderFile, SourceRecord, ViewId } from './types'
+import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, PaymentGuidance, ProviderFile, SourceRecord, ViewId } from './types'
 
 const nav: Array<{ id: ViewId; label: string; icon: string }> = [
   { id: 'overview', label: 'Genel Bakış', icon: '⌂' },
@@ -54,6 +54,67 @@ const fileExtractionLabel: Record<ProviderFile['extractionStatus'], string> = {
   processing: 'Okunuyor',
   skipped: 'İlgisiz / atlandı',
 }
+
+const officialPaymentGuides: Array<{ match: RegExp; guidance: PaymentGuidance }> = [
+  {
+    match: /\b(cjib|centraal justitieel|verkeersboete|bekeuring)\b/i,
+    guidance: {
+      bulkPayment: 'Mijn CJIB / resmi CJIB portali açık cezaları birlikte gösterir; ödeme öncesi belge numarası ve tutar eşleşmeli.',
+      installmentSummary: 'CJIB’de bazı cezalar için taksit/ödeme planı istenebilir. İtiraz/beroep düşünülüyorsa ödeme planı istemeden önce resmi uyarıyı kontrol et.',
+      objectionUrl: 'https://www.cjib.nl/direct-regelen/ik-ben-het-niet-eens-met-mijn-boete/ik-ben-het-niet-eens-met-een-verkeersboete',
+      paymentMethod: 'CJIB mektubundaki QR/IBAN/betalingskenmerk veya resmi CJIB portali.',
+      paymentPlanUrl: 'https://www.cjib.nl/betalen-in-delen-aanvragen',
+      paymentUrl: 'https://www.cjib.nl/direct-regelen/ik-wil-graag/ik-wil-betalen',
+      portalLabel: 'CJIB betalen',
+      sourceLabel: 'CJIB',
+      sourceUrl: 'https://www.cjib.nl/',
+      warning: 'İtiraz, ödeme ve taksit ayrı kararlar. Resmi mektuptaki kenmerk olmadan ödeme yapma.',
+    },
+  },
+  {
+    match: /\b(amsterdam|gemeente amsterdam|belastingbalie)\b/i,
+    guidance: {
+      bulkPayment: 'Amsterdam Mijn Belastingen açık parkeerbon/belastingaanslag kayıtlarını tek portalda gösterir; açık kayıtlar üzerinden toplu ödeme veya düzenleme kontrol edilir.',
+      installmentSummary: 'Parkeerbon için ödeme düzeni en fazla 12 parça ve en az €30/ay; wielklem varsa düzenleme yok. Vergi aanslag için de Mijn Belastingen üzerinden düzenleme kontrol edilir.',
+      objectionUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/bezwaar-maken-parkeerbon/',
+      paymentMethod: 'Mijn Belastingen veya mektuptaki betalingskenmerk ile resmi Amsterdam ödeme kanalı.',
+      paymentPlanUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/betalingsregeling-afspreken-parkeerbon/',
+      paymentUrl: 'https://belastingbalie.amsterdam.nl/',
+      portalLabel: 'Amsterdam Mijn Belastingen',
+      sourceLabel: 'Gemeente Amsterdam',
+      sourceUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/parkeerbon-betalen/',
+      warning: 'Parkeerbon ve bezwaar kararını karıştırma; belge tarihi ve aanslagnummer kontrol edilmeli.',
+    },
+  },
+  {
+    match: /\b(den haag|denhaag|gemeente den haag|mijndenhaag|haagse)\b/i,
+    guidance: {
+      bulkPayment: 'MijnDenHaag parkeerbon/fatura gibi açık belediye kayıtlarını gösterir. Birden fazla belediye factuur için Den Haag resmi sayfası debiteuren e-posta yolunu belirtir.',
+      installmentSummary: 'Gemeentelijke belasting için en fazla 12 ay ve en az €25/ay; factuur tarafında kişisel bakiye en az €50 ve taksit en az €20 koşulu geçebilir.',
+      objectionUrl: 'https://www.denhaag.nl/nl/parkeren/bezwaar-maken-tegen-een-parkeerbon-naheffingsaanslag/',
+      paymentMethod: 'MijnDenHaag veya mektuptaki betalingskenmerk ile Gemeente Den Haag ödeme kanalı.',
+      paymentPlanUrl: 'https://www.denhaag.nl/nl/belastingen/betalingsregeling-belastingen-aanvragen/',
+      paymentUrl: 'https://www.denhaag.nl/nl/parkeren/parkeerbon-naheffingsaanslag/',
+      portalLabel: 'MijnDenHaag / parkeerbon',
+      sourceLabel: 'Gemeente Den Haag',
+      sourceUrl: 'https://www.denhaag.nl/nl/parkeren/contact-over-parkeren/',
+      warning: 'Parkeerbon bezwaarında süre genelde dagtekening’den 6 hafta; itiraz sürecinde ödeme gerekip gerekmediği resmi sayfadan kontrol edilmeli.',
+    },
+  },
+  {
+    match: /\b(belastingdienst|toeslagen|belasting)\b/i,
+    guidance: {
+      bulkPayment: 'Belastingdienst/Mijn Belastingdienst açık aanslag ve ödeme düzeni için resmi portala yönlendirir.',
+      installmentSummary: 'Vergi ve toeslagen borçlarında ödeme düzeni kişisel duruma göre değişir; geri ödeme riski için tutar ve jaar/kenmerk eşleşmeli.',
+      paymentMethod: 'Resmi Belastingdienst portalı veya mektuptaki betalingskenmerk.',
+      paymentUrl: 'https://www.belastingdienst.nl/wps/wcm/connect/nl/betalen-en-ontvangen/betalen-en-ontvangen',
+      portalLabel: 'Belastingdienst betalen',
+      sourceLabel: 'Belastingdienst',
+      sourceUrl: 'https://www.belastingdienst.nl/',
+      warning: 'Toeslagen değişikliği geç bildirilirse sonradan borç doğabilir.',
+    },
+  },
+]
 
 const lifeRadarItems = [
   {
@@ -203,6 +264,23 @@ function gmailConnectErrorMessage(error: unknown) {
 const evidenceLevels = new Set<EvidenceLevel>(['verified', 'review', 'demo'])
 const obligationStatuses = new Set<ObligationStatus>(['open', 'overdue', 'paid', 'disputed'])
 
+function normalizePaymentGuidance(value: unknown): PaymentGuidance | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const source = value as Record<string, unknown>
+  const guidance: PaymentGuidance = {}
+  for (const key of ['bulkPayment', 'installmentSummary', 'objectionUrl', 'paymentMethod', 'paymentPlanUrl', 'paymentUrl', 'portalLabel', 'referenceHint', 'sourceLabel', 'sourceUrl', 'warning'] as const) {
+    const text = source[key]
+    if (typeof text === 'string' && text.trim()) guidance[key] = text.trim()
+  }
+  return Object.keys(guidance).length ? guidance : undefined
+}
+
+function guidanceForObligation(item: Pick<Obligation, 'authority' | 'note' | 'paymentGuidance' | 'title'>): PaymentGuidance | undefined {
+  if (item.paymentGuidance && Object.keys(item.paymentGuidance).length > 0) return item.paymentGuidance
+  const haystack = `${item.authority} ${item.title} ${item.note}`
+  return officialPaymentGuides.find((guide) => guide.match.test(haystack))?.guidance
+}
+
 function mapDashboard(payload: DashboardResponse) {
   const liveObligations: Obligation[] = payload.obligations.map((item) => ({
     amount: Number(item.amount ?? 0),
@@ -213,6 +291,7 @@ function mapDashboard(payload: DashboardResponse) {
     evidence: evidenceLevels.has(item.evidence_level as EvidenceLevel) ? item.evidence_level as EvidenceLevel : 'review',
     id: item.id,
     note: item.note ?? 'Açıklama eklenmedi.',
+    paymentGuidance: normalizePaymentGuidance(item.payment_guidance),
     source: item.source_url ?? 'Supabase kaydı',
     status: obligationStatuses.has(item.status as ObligationStatus) ? item.status as ObligationStatus : 'open',
     title: item.title,
@@ -736,8 +815,165 @@ function InboxView({ accounts, live, messageCount, messages }: { accounts: MailA
   return <><PageIntro eyebrow="GELEN KUTUSU" title={live ? `${messageCount} güvenli mesaj kaydı` : 'E-posta akışı henüz bağlanmadı'} detail={live ? 'Her mesaj hangi Gmail hesabından okunduğu bilgisiyle gösterilir. Gövde burada açılmaz; ödeme/itiraz kararı için resmi belge ayrıca doğrulanır.' : 'Önce OAuth bağlantısı, sonra idempotent senkronizasyon ve hesap bazlı kaynak izi.'} /><section className="panel account-scan-panel"><div className="panel-head"><div><div className="eyebrow">TARANAN HESAPLAR</div><h3>Bu hesapların gelen kutusu izleniyor</h3></div><span className={`pill evidence-${connected.length ? 'verified' : 'review'}`}>{connected.length} bağlı</span></div><div className="scan-grid">{connected.length ? connected.map((account) => <div className="scan-card" key={account.id}><strong>{account.email}</strong><span>{account.lastSync ? `Son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'İlk tarama bekleniyor'}</span><small>{account.scopes.includes('https://www.googleapis.com/auth/drive.readonly') ? 'Gmail + Drive izni' : 'Sadece Gmail'}</small></div>) : <div className="empty-inline">Henüz taranan Gmail hesabı yok.</div>}</div></section><section className="panel message-panel"><div className="panel-head"><div><div className="eyebrow">MESAJ KAYITLARI</div><h3>Kaynak hesap ve sınıflandırma</h3></div><EvidencePill level={live ? 'verified' : 'review'} /></div><div className="message-list">{messages.length ? messages.map((message) => <div className="message-row" key={message.id}><div className={`message-severity ${message.status === 'review_required' ? 'hot' : ''}`}>✉</div><div className="message-main"><div className="message-meta"><span>{message.accountEmail}</span><span>{message.receivedAt ? new Date(message.receivedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span></div><strong>{message.subject}</strong><p>{message.snippet || 'Özet yok.'}</p><small>Gönderen: {message.from}</small></div><div className="message-tags"><span className="pill evidence-review">{message.classification}</span><span className="pill">{processingLabel[message.status]}</span></div></div>) : <div className="empty-state large"><div className="empty-icon">✉</div><h3>{messageCount ? 'Son tarama henüz detay döndürmedi' : 'İşlenmiş mesaj yok'}</h3><p>Worker çalıştığında Gmail metadata’sı hesap bazlı kaydedilir ve ceza/vergi/IND/son-tarih sinyalleri ayrı kayıt üretir.</p><EvidencePill level={live ? 'verified' : 'review'} /></div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">GÜVENLİK SINIRI</div><h3>Bu ekranın yapmayacağı şeyler</h3></div></div><div className="guardrail-grid"><Guardrail title="DigiD şifresi istemez" text="DigiD'ye otomatik giriş veya kimlik bilgisi saklama yok." /><Guardrail title="Mail göndermeyi durdurur" text="Avukat, kurum veya işverene gönderim insan onayı olmadan çalışmaz." /><Guardrail title="Eki körlemesine açmaz" text="Dosya türü, boyutu ve zararlı içerik kontrolünden geçmeden işlenmez." /></div></section></>
 }
 
+function validPaymentDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null
+}
+
+function paymentSortValue(item: Obligation) {
+  const date = validPaymentDate(item.dueDate)
+  return date ? new Date(`${date}T12:00:00`).getTime() : Number.MAX_SAFE_INTEGER
+}
+
+function paymentTone(days: number | null, status: ObligationStatus) {
+  if (status === 'paid') return 'paid'
+  if (status === 'disputed') return 'disputed'
+  if (days === null) return 'planned'
+  if (days < 0) return 'critical'
+  if (days <= 3) return 'critical'
+  if (days <= 14) return 'soon'
+  return 'planned'
+}
+
+function paymentTimeLabel(item: Obligation) {
+  const date = validPaymentDate(item.dueDate)
+  if (!date) return { days: null, label: 'Tarih okunmadı', tone: paymentTone(null, item.status) }
+  const days = daysUntil(date)
+  const label = days < 0 ? `${Math.abs(days)} gün geçti` : days === 0 ? 'Bugün' : `${days} gün kaldı`
+  return { days, label, tone: paymentTone(days, item.status) }
+}
+
+function paymentStatus(item: Obligation) {
+  const time = paymentTimeLabel(item)
+  if (item.status === 'open' && typeof time.days === 'number' && time.days < 0) return 'Gecikmiş'
+  return statusLabel[item.status]
+}
+
+function groupByAuthority(items: Obligation[]) {
+  const groups = new Map<string, { amount: number; count: number; guidance?: PaymentGuidance; items: Obligation[]; nextDue: string | null }>()
+  for (const item of items) {
+    const key = item.authority || 'Bilinmeyen kurum'
+    const existing = groups.get(key) ?? { amount: 0, count: 0, guidance: guidanceForObligation(item), items: [], nextDue: null }
+    existing.amount += item.status === 'paid' ? 0 : item.amount
+    existing.count += 1
+    existing.items.push(item)
+    const dueDate = validPaymentDate(item.dueDate)
+    if (dueDate && (!existing.nextDue || dueDate < existing.nextDue)) existing.nextDue = dueDate
+    existing.guidance = existing.guidance ?? guidanceForObligation(item)
+    groups.set(key, existing)
+  }
+  return Array.from(groups.entries()).map(([authority, group]) => ({ authority, ...group })).sort((a, b) => (a.nextDue ?? '9999').localeCompare(b.nextDue ?? '9999'))
+}
+
+function calendarDate(value: string) {
+  return value.replaceAll('-', '')
+}
+
+function icsEscape(value: string) {
+  return value.replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll(',', '\\,').replaceAll(';', '\\;')
+}
+
+function downloadPaymentCalendar(items: Obligation[]) {
+  const events = items
+    .filter((item) => item.status !== 'paid' && validPaymentDate(item.dueDate))
+    .sort((a, b) => paymentSortValue(a) - paymentSortValue(b))
+    .map((item) => {
+      const date = validPaymentDate(item.dueDate)!
+      const guidance = guidanceForObligation(item)
+      const description = [
+        `${item.authority} · ${item.amount ? formatEuro(item.amount) : 'Tutar belirsiz'}`,
+        item.note,
+        guidance?.paymentUrl ? `Ödeme: ${guidance.paymentUrl}` : null,
+        guidance?.paymentPlanUrl ? `Taksit/plan: ${guidance.paymentPlanUrl}` : null,
+        guidance?.objectionUrl ? `İtiraz: ${guidance.objectionUrl}` : null,
+      ].filter(Boolean).join('\\n')
+      return [
+        'BEGIN:VEVENT',
+        `UID:${item.id}@muh-agent`,
+        `DTSTAMP:${calendarDate(new Date().toISOString().slice(0, 10))}T120000Z`,
+        `DTSTART;VALUE=DATE:${calendarDate(date)}`,
+        `SUMMARY:${icsEscape(`Ödeme: ${item.authority} ${item.amount ? formatEuro(item.amount) : ''}`.trim())}`,
+        `DESCRIPTION:${icsEscape(description)}`,
+        'END:VEVENT',
+      ].join('\r\n')
+    })
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Muh Agent//Payment Calendar//TR', 'CALSCALE:GREGORIAN', ...events, 'END:VCALENDAR'].join('\r\n')
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'muh-agent-odeme-takvimi.ics'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; live: boolean; onOpenApprovals: () => void }) {
-  return <><PageIntro eyebrow="PARA VE YÜKÜMLÜLÜKLER" title="Ödeme kararı senden çıkar" detail="Ajan tutarı ve tarihi düzenler; parayı göndermek için ayrı bir insan onayı gerekir." action={<button className="button primary" onClick={onOpenApprovals}>Onayları aç →</button>} /><div className="table-panel panel"><div className="table-toolbar"><div><strong>{items.length} kayıt</strong><span> · {live ? 'canlı kasa / kanıt seviyeleri görünür' : 'tamamı demo/inceleme etiketli'}</span></div><button className="button secondary" onClick={() => undefined}>CSV içe aktar (hazırlık)</button></div><div className="obligation-list">{items.length ? items.map((item) => <div className="obligation-row" key={item.id}><div className="obligation-symbol">{item.category === 'Ceza' ? '!' : item.category === 'Vergi' ? '◈' : '€'}</div><div className="obligation-main"><strong>{item.title}</strong><span>{item.authority} · {item.note}</span></div><div className="obligation-amount">{item.amount ? formatEuro(item.amount) : 'Belirsiz'}</div><div className="obligation-date"><strong>{item.dueDate}</strong><span>{statusLabel[item.status]}</span></div><EvidencePill level={item.evidence} /></div>) : <div className="empty-inline">Yükümlülük kaydı yok.</div>}</div></div><div className="info-callout"><strong>Ödeme entegrasyonu kapalı.</strong><span>Bu sürüm sadece kayıt + onay kararı tutar. Banka bağlantısı kurulsa bile transfer öncesi alıcı, IBAN, tutar ve son tarih yeniden doğrulanır.</span></div></>
+  const sorted = [...items].sort((a, b) => paymentSortValue(a) - paymentSortValue(b))
+  const openItems = sorted.filter((item) => item.status !== 'paid')
+  const totalOpen = openItems.reduce((sum, item) => sum + item.amount, 0)
+  const overdue = openItems.filter((item) => paymentTimeLabel(item).days !== null && paymentTimeLabel(item).days! < 0).length
+  const dueSoon = openItems.filter((item) => {
+    const days = paymentTimeLabel(item).days
+    return days !== null && days >= 0 && days <= 14
+  }).length
+  const authorityGroups = groupByAuthority(sorted)
+
+  return <>
+    <PageIntro
+      eyebrow="PARA VE YÜKÜMLÜLÜKLER"
+      title="Tek ödeme takvimi"
+      detail="Belgelerden çıkan tutar, kurum, son ödeme ve itiraz süreleri burada gün sayacıyla görünür. Ödeme/taksit linkleri resmi kurum sayfalarına gider; para transferi otomatik yapılmaz."
+      action={<div className="action-pair"><button className="button primary" onClick={onOpenApprovals}>Onayları aç →</button><button className="button secondary" onClick={() => downloadPaymentCalendar(sorted)}>Takvim indir (.ics)</button></div>}
+    />
+    <div className="payment-summary-grid">
+      <MetricCard label="Açık toplam" value={formatEuro(totalOpen)} suffix="" detail="Ödenmemiş / itirazdaki kayıtlar" tone="blue" />
+      <MetricCard label="14 gün içinde" value={String(dueSoon)} suffix=" ödeme" detail="Yaklaşan son tarih" tone="amber" />
+      <MetricCard label="Geciken" value={String(overdue)} suffix=" kayıt" detail="Bugün aksiyon gerekir" tone="violet" />
+      <MetricCard label="Kurum sayısı" value={String(authorityGroups.length)} suffix="" detail="Toplu ödeme/taksit kontrolü" tone="green" />
+    </div>
+    <section className="panel authority-panel">
+      <div className="panel-head"><div><div className="eyebrow">KURUMA GÖRE TOPLAM</div><h3>Hangi kuruma ne kadar ve nereden ödenecek</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{live ? 'Canlı belge kayıtları' : 'Demo veri'}</span></div>
+      <div className="authority-grid">
+        {authorityGroups.length ? authorityGroups.map((group) => <div className="authority-card" key={group.authority}>
+          <div><strong>{group.authority}</strong><span>{group.count} kayıt · sonraki tarih {group.nextDue ?? 'okunmadı'}</span></div>
+          <div className="authority-total">{formatEuro(group.amount)}</div>
+          <p>{group.guidance?.bulkPayment ?? 'Toplu ödeme/taksit kanalı için resmi belge veya kurum portalı kontrol edilmeli.'}</p>
+          <div className="payment-links">
+            {group.guidance?.paymentUrl && <a href={group.guidance.paymentUrl} target="_blank" rel="noreferrer">Öde / portal ↗</a>}
+            {group.guidance?.paymentPlanUrl && <a href={group.guidance.paymentPlanUrl} target="_blank" rel="noreferrer">Taksit/plan ↗</a>}
+          </div>
+        </div>) : <div className="empty-inline">Henüz ödeme kaydı yok. Evrak Kasası’nda belgeyi oku.</div>}
+      </div>
+    </section>
+    <section className="table-panel panel">
+      <div className="table-toolbar"><div><strong>{sorted.length} kayıt</strong><span> · ödeme, taksit, itiraz ve geçmiş kayıtlar tek listede</span></div><button className="button secondary" onClick={() => downloadPaymentCalendar(sorted)}>Takvime aktar</button></div>
+      <div className="payment-calendar-list">
+        {sorted.length ? sorted.map((item) => {
+          const time = paymentTimeLabel(item)
+          const guidance = guidanceForObligation(item)
+          return <article className={`payment-calendar-row ${time.tone}`} key={item.id}>
+            <div className={`payment-days ${time.tone}`}><strong>{time.label}</strong><span>{validPaymentDate(item.dueDate) ?? 'tarih yok'}</span></div>
+            <div className="payment-main">
+              <div className="message-meta"><span>{item.authority}</span><span>{item.category}</span><span>{paymentStatus(item)}</span></div>
+              <h3>{item.title}</h3>
+              <p>{item.note}</p>
+              {guidance?.installmentSummary && <small className="extract-action">Taksit: {guidance.installmentSummary}</small>}
+              {guidance?.warning && <small className="extract-line">Kontrol: {guidance.warning}</small>}
+            </div>
+            <div className="payment-side">
+              <div className="obligation-amount">{item.amount ? formatEuro(item.amount) : 'Tutar belirsiz'}</div>
+              <EvidencePill level={item.evidence} />
+              <div className="payment-links">
+                {item.source && <a href={item.source} target="_blank" rel="noreferrer">Belge/kaynak ↗</a>}
+                {guidance?.paymentUrl && <a href={guidance.paymentUrl} target="_blank" rel="noreferrer">{guidance.portalLabel ?? 'Ödeme'} ↗</a>}
+                {guidance?.paymentPlanUrl && <a href={guidance.paymentPlanUrl} target="_blank" rel="noreferrer">Taksit ↗</a>}
+                {guidance?.objectionUrl && <a href={guidance.objectionUrl} target="_blank" rel="noreferrer">İtiraz ↗</a>}
+              </div>
+            </div>
+          </article>
+        }) : <div className="empty-state large"><div className="empty-icon">€</div><h3>Henüz okunmuş ödeme belgesi yok</h3><p>PDF/JPG belgeleri “Muh Agent Inbox” klasörüne koyup Evrak Kasası’nda “Belgeleri şimdi oku” dediğinde tutar, tarih ve kurum bu takvime düşer.</p><EvidencePill level="review" /></div>}
+      </div>
+    </section>
+    <div className="info-callout"><strong>Ödeme entegrasyonu kapalı.</strong><span>Bu panel ödeme kararını hazırlar: kurum, tutar, son tarih, link ve taksit/itiraz kontrolü görünür. Banka transferi, DigiD girişi veya resmi başvuru otomatik yapılmaz.</span></div>
+  </>
 }
 
 function formatFileSize(sizeBytes?: number) {

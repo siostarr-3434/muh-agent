@@ -98,7 +98,7 @@ async function dashboard(request, response, config) {
   const userId = context.user.id
 
   const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult] = await Promise.all([
-    context.client.from('obligations').select('id,authority,title,category,amount,currency,due_date,status,evidence_level,source_url,note').eq('user_id', userId).order('due_date', { ascending: true }),
+    context.client.from('obligations').select('id,authority,title,category,amount,currency,due_date,status,evidence_level,source_url,note,payment_guidance').eq('user_id', userId).order('due_date', { ascending: true }),
     context.client.from('deadlines').select('id,title,owner,due_at,status,evidence_level,source_url').eq('user_id', userId).order('due_at', { ascending: true }),
     context.client.from('approvals').select('id,action_type,risk,payload,status,expires_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(100),
     context.client.from('email_accounts').select('id,provider,email,label,status,scopes,last_sync_at,last_error_code').eq('user_id', userId).order('created_at', { ascending: true }),

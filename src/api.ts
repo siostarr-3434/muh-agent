@@ -107,6 +107,7 @@ export interface DashboardResponse {
     evidence_level: string
     id: string
     note: string | null
+    payment_guidance: Record<string, unknown> | null
     source_url: string | null
     status: string
     title: string

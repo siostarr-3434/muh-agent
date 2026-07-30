@@ -13,6 +13,20 @@ export type EvidenceLevel = 'verified' | 'review' | 'demo'
 export type ObligationStatus = 'open' | 'overdue' | 'paid' | 'disputed'
 export type ApprovalStatus = 'pending' | 'approved' | 'rejected'
 
+export interface PaymentGuidance {
+  bulkPayment?: string
+  installmentSummary?: string
+  objectionUrl?: string
+  paymentMethod?: string
+  paymentPlanUrl?: string
+  paymentUrl?: string
+  portalLabel?: string
+  referenceHint?: string
+  sourceLabel?: string
+  sourceUrl?: string
+  warning?: string
+}
+
 export interface Obligation {
   id: string
   title: string
@@ -25,6 +39,7 @@ export interface Obligation {
   evidence: EvidenceLevel
   source: string
   note: string
+  paymentGuidance?: PaymentGuidance
 }
 
 export interface Deadline {
