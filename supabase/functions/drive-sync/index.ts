@@ -43,20 +43,24 @@ async function workerAuthorized(request: Request) {
 const driveFileLimit = 50
 const driveInboxFolderName = 'Muh Agent Inbox'
 const driveReadonlyScope = 'https://www.googleapis.com/auth/drive.readonly'
+const extractableMimeTypes = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/heic',
+  'image/heif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+])
 const driveMetadataQuery = [
   'trashed = false',
   'and',
-  '(',
-  "mimeType = 'application/pdf'",
-  "or mimeType = 'application/vnd.google-apps.document'",
-  "or mimeType = 'application/vnd.google-apps.spreadsheet'",
-  "or mimeType = 'application/msword'",
-  "or mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'",
-  "or mimeType = 'application/vnd.ms-excel'",
-  "or mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'",
-  "or mimeType = 'image/jpeg'",
-  "or mimeType = 'image/png'",
-  ')',
+  "mimeType != 'application/vnd.google-apps.folder'",
 ].join(' ')
 
 type Admin = ReturnType<typeof adminClient>
@@ -67,6 +71,7 @@ interface DriveFile {
   modifiedTime?: string
   name?: string
   size?: string
+  thumbnailLink?: string
   webViewLink?: string
 }
 
@@ -90,6 +95,18 @@ function safeWebUrl(value: string | undefined) {
     if (url.protocol !== 'https:') return null
     if (!['drive.google.com', 'docs.google.com'].includes(url.hostname)) return null
     return url.toString()
+  } catch {
+    return null
+  }
+}
+
+function safeThumbnailUrl(value: string | undefined) {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:') return null
+    if (!url.hostname.endsWith('googleusercontent.com') && !['drive.google.com', 'docs.google.com'].includes(url.hostname)) return null
+    return url.toString().replace(/=s\d+(-[a-z0-9]+)?$/i, '=s2000')
   } catch {
     return null
   }
@@ -162,7 +179,7 @@ async function driveFiles(accessToken: string, folderIds: string[]) {
   const parentQuery = folderIds.map((folderId) => `${driveQueryString(folderId)} in parents`).join(' or ')
   const params = new URLSearchParams({
     corpora: 'allDrives',
-    fields: 'files(id,name,mimeType,modifiedTime,size,webViewLink)',
+    fields: 'files(id,name,mimeType,modifiedTime,size,thumbnailLink,webViewLink)',
     includeItemsFromAllDrives: 'true',
     orderBy: 'modifiedTime desc',
     pageSize: String(driveFileLimit),
@@ -183,7 +200,8 @@ async function syncFile(admin: Admin, account: { email: string; id: string; user
   const sourceRef = `drive://${account.id}/${file.id}`
   const triage = classifyFile(file)
   const now = new Date().toISOString()
-  const { error } = await admin.from('provider_files').upsert({
+  const extractable = extractableMimeTypes.has(file.mimeType)
+  const payload: Record<string, unknown> = {
     account_id: account.id,
     classification: triage.classification,
     extracted_data: {
@@ -191,6 +209,7 @@ async function syncFile(admin: Admin, account: { email: string; id: string; user
       authorities: triage.authorities,
       source_ref: sourceRef,
       tags: triage.tags,
+      thumbnail_link: safeThumbnailUrl(file.thumbnailLink),
     },
     last_seen_at: now,
     mime_type: file.mimeType,
@@ -204,7 +223,13 @@ async function syncFile(admin: Admin, account: { email: string; id: string; user
     status: triage.relevant ? 'review_required' : 'metadata',
     user_id: account.user_id,
     web_url: safeWebUrl(file.webViewLink),
-  }, { onConflict: 'account_id,provider_file_id' })
+  }
+  if (!extractable) {
+    payload.extraction_error_code = 'unsupported_mime_type'
+    payload.extraction_status = 'skipped'
+    payload.status = 'unsupported'
+  }
+  const { error } = await admin.from('provider_files').upsert(payload, { onConflict: 'account_id,provider_file_id' })
   if (error) throw new Error('drive_file_save_failed')
   return 1
 }

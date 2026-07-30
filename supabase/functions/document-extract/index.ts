@@ -14,8 +14,11 @@ const supportedMimeTypes = new Set([
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/heic',
+  'image/heif',
   'image/jpeg',
   'image/png',
+  'image/webp',
 ])
 
 type Admin = ReturnType<typeof adminClient>
@@ -156,6 +159,20 @@ function exportedMimeType(mimeType: string) {
   return mimeType
 }
 
+function heifPreviewUrl(file: ProviderFile) {
+  if (file.mime_type !== 'image/heic' && file.mime_type !== 'image/heif') return null
+  const value = file.extracted_data?.thumbnail_link
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:') return null
+    if (!url.hostname.endsWith('googleusercontent.com') && !['drive.google.com', 'docs.google.com'].includes(url.hostname)) return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 function downloadUrl(file: ProviderFile) {
   const fileId = encodeURIComponent(file.provider_file_id)
   if (file.mime_type === 'application/vnd.google-apps.document' || file.mime_type === 'application/vnd.google-apps.spreadsheet') {
@@ -165,15 +182,17 @@ function downloadUrl(file: ProviderFile) {
 }
 
 async function downloadDriveFile(file: ProviderFile, accessToken: string) {
-  const response = await fetchWithRetry(downloadUrl(file), {
-    headers: { authorization: `Bearer ${accessToken}` },
+  const previewUrl = heifPreviewUrl(file)
+  const response = await fetchWithRetry(previewUrl ?? downloadUrl(file), {
+    headers: previewUrl ? {} : { authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(30_000),
   })
-  if (!response.ok) throw new Error(`drive_download_failed_${response.status}`)
+  if (!response.ok) throw new Error(previewUrl ? `drive_thumbnail_download_failed_${response.status}` : `drive_download_failed_${response.status}`)
   const buffer = await response.arrayBuffer()
   if (buffer.byteLength <= 0) throw new Error('empty_file')
   if (buffer.byteLength > maxFileBytes) throw new Error('file_too_large')
-  return { buffer, mimeType: exportedMimeType(file.mime_type), sizeBytes: buffer.byteLength }
+  const responseMimeType = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
+  return { buffer, mimeType: previewUrl ? (responseMimeType?.startsWith('image/') ? responseMimeType : 'image/jpeg') : exportedMimeType(file.mime_type), sizeBytes: buffer.byteLength }
 }
 
 async function accessTokenForFile(admin: Admin, file: ProviderFile) {
