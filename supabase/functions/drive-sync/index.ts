@@ -41,6 +41,7 @@ async function workerAuthorized(request: Request) {
 }
 
 const driveFileLimit = 50
+const driveInboxFolderName = 'Muh Agent Inbox'
 const driveReadonlyScope = 'https://www.googleapis.com/auth/drive.readonly'
 const driveMetadataQuery = [
   'trashed = false',
@@ -69,6 +70,11 @@ interface DriveFile {
   webViewLink?: string
 }
 
+interface DriveFolder {
+  id?: string
+  name?: string
+}
+
 function compactText(...parts: Array<string | null | undefined>) {
   return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
 }
@@ -93,6 +99,10 @@ function parseSize(value: string | undefined) {
   if (!value) return null
   const size = Number(value)
   return Number.isSafeInteger(size) && size >= 0 ? size : null
+}
+
+function driveQueryString(value: string) {
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 }
 
 function classifyFile(file: DriveFile) {
@@ -121,13 +131,37 @@ function classifyFile(file: DriveFile) {
   }
 }
 
-async function driveFiles(accessToken: string) {
+async function driveInboxFolders(accessToken: string) {
+  const params = new URLSearchParams({
+    fields: 'files(id,name)',
+    includeItemsFromAllDrives: 'true',
+    pageSize: '10',
+    q: [
+      'trashed = false',
+      'and',
+      "mimeType = 'application/vnd.google-apps.folder'",
+      'and',
+      `name = ${driveQueryString(driveInboxFolderName)}`,
+    ].join(' '),
+    supportsAllDrives: 'true',
+  })
+  const response = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) throw new Error(`drive_folder_query_failed_${response.status}`)
+  const payload = await response.json() as { files?: DriveFolder[] }
+  return (payload.files ?? []).filter((folder) => folder.id).map((folder) => folder.id!)
+}
+
+async function driveFiles(accessToken: string, folderIds: string[]) {
+  if (folderIds.length === 0) return []
+  const parentQuery = folderIds.map((folderId) => `${driveQueryString(folderId)} in parents`).join(' or ')
   const params = new URLSearchParams({
     fields: 'files(id,name,mimeType,modifiedTime,size,webViewLink)',
     includeItemsFromAllDrives: 'true',
     orderBy: 'modifiedTime desc',
     pageSize: String(driveFileLimit),
-    q: driveMetadataQuery,
+    q: `(${parentQuery}) and ${driveMetadataQuery}`,
     supportsAllDrives: 'true',
   })
   const response = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
@@ -174,8 +208,10 @@ async function syncAccount(admin: Admin, account: { email: string; id: string; s
   const { data: token } = await admin.from('email_tokens').select('refresh_token_ciphertext').eq('account_id', account.id).single()
   if (!token) throw new Error('token_missing')
   const accessToken = await refreshAccessToken(await decryptSecret(token.refresh_token_ciphertext, env('TOKEN_ENCRYPTION_KEY')))
+  const folderIds = await driveInboxFolders(accessToken)
+  if (folderIds.length === 0) return { imported: 0, skipped: 'drive_inbox_folder_missing' }
   let imported = 0
-  for (const file of await driveFiles(accessToken)) {
+  for (const file of await driveFiles(accessToken, folderIds)) {
     imported += await syncFile(admin, account, file)
   }
   await admin.from('email_accounts').update({ last_error_code: null, status: 'connected' }).eq('id', account.id)
