@@ -38,6 +38,9 @@ export interface Obligation {
   status: ObligationStatus
   evidence: EvidenceLevel
   source: string
+  sourceExcerpt?: string
+  sourceLabel?: string
+  sourceUrl?: string
   note: string
   paymentGuidance?: PaymentGuidance
 }
@@ -50,6 +53,9 @@ export interface Deadline {
   urgency: 'critical' | 'soon' | 'planned'
   status: 'open' | 'waiting' | 'done'
   evidence: EvidenceLevel
+  sourceExcerpt?: string
+  sourceLabel?: string
+  sourceUrl?: string
 }
 
 export interface ApprovalItem {
@@ -82,6 +88,7 @@ export interface DashboardMessage {
   classification: string
   status: 'queued' | 'processing' | 'processed' | 'review_required' | 'failed'
   extracted: Record<string, unknown>
+  sourceUrl?: string
 }
 
 export interface ProviderFile {
@@ -101,6 +108,7 @@ export interface ProviderFile {
   provider: 'Drive' | 'Gmail' | 'Upload'
   sizeBytes?: number
   status: 'metadata' | 'review_required' | 'ignored' | 'failed'
+  sourceLabel?: string
   webUrl?: string
 }
 

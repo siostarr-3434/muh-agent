@@ -90,6 +90,55 @@ function normalizeApproval(row) {
   }
 }
 
+const suppressedProviderFileErrors = new Set(['pre_ocr_backlog_skipped', 'non_household_test_cleanup'])
+
+function gmailMessageUrl(accountEmail, providerMessageId) {
+  if (!accountEmail || !providerMessageId) return null
+  return `https://mail.google.com/mail/u/0/?authuser=${encodeURIComponent(accountEmail)}#all/${encodeURIComponent(providerMessageId)}`
+}
+
+function sourceTitleFromMessage(message) {
+  const subject = typeof message.subject === 'string' && message.subject.trim() ? message.subject.trim() : ''
+  if (subject) return subject
+  return typeof message.from_address === 'string' && message.from_address.trim() ? `Gmail mesajı: ${message.from_address.trim()}` : 'Gmail mesajı'
+}
+
+function buildSourceIndex(accounts, messages, files) {
+  const accountsById = new Map((accounts ?? []).map((account) => [account.id, account.email]))
+  const index = new Map()
+  for (const message of messages ?? []) {
+    const accountEmail = accountsById.get(message.account_id) ?? ''
+    const title = sourceTitleFromMessage(message)
+    index.set(`gmail://${message.account_id}/${message.provider_message_id}`, {
+      excerpt: message.snippet ?? null,
+      label: `Gmail · ${accountEmail || 'hesap'} · ${title}`,
+      title,
+      webUrl: gmailMessageUrl(accountEmail, message.provider_message_id),
+    })
+  }
+  for (const file of files ?? []) {
+    index.set(`drive://${file.account_id}/${file.provider_file_id}`, {
+      excerpt: typeof file.extracted_data?.extraction?.summary_tr === 'string' ? file.extracted_data.extraction.summary_tr : null,
+      label: `Drive · ${accountsById.get(file.account_id) ?? 'hesap'} · ${file.name}`,
+      title: file.name,
+      webUrl: file.web_url ?? null,
+    })
+  }
+  return index
+}
+
+function enrichSourceLinkedRow(row, sourceIndex) {
+  const source = row.source_url ? sourceIndex.get(row.source_url) : null
+  const genericTitle = /^Bilinmeyen kaynak bericht$/i.test(row.title ?? '')
+  return {
+    ...row,
+    display_title: genericTitle && source?.title ? source.title : row.title,
+    source_excerpt: source?.excerpt ?? null,
+    source_label: source?.label ?? null,
+    source_web_url: source?.webUrl ?? null,
+  }
+}
+
 async function dashboard(request, response, config) {
   if (!method(request, response, ['GET'])) return true
   if (!liveOnly(response, config)) return true
@@ -105,7 +154,7 @@ async function dashboard(request, response, config) {
     context.client.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('provider_files').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-    context.client.from('provider_files').select('id,account_id,provider,provider_file_id,name,mime_type,size_bytes,modified_at,web_url,classification,extracted_data,status,last_seen_at,document_id,extraction_status,extraction_error_code,extracted_at').eq('user_id', userId).order('modified_at', { ascending: false, nullsFirst: false }).limit(50),
+    context.client.from('provider_files').select('id,account_id,provider,provider_file_id,name,mime_type,size_bytes,modified_at,web_url,classification,extracted_data,status,last_seen_at,document_id,extraction_status,extraction_error_code,extracted_at').eq('user_id', userId).order('modified_at', { ascending: false, nullsFirst: false }).limit(100),
     context.client.from('email_messages').select('id,account_id,provider_message_id,from_address,subject,received_at,snippet,classification,extracted_data,processing_status').eq('user_id', userId).order('received_at', { ascending: false, nullsFirst: false }).limit(50),
     context.client.from('notifications').select('id,severity,title,body,source_url,read_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(25),
     context.client.from('source_catalog').select('id,name,domain,purpose,trust,enabled_by_default').order('id', { ascending: true }),
@@ -120,16 +169,30 @@ async function dashboard(request, response, config) {
     return true
   }
 
+  const accounts = accountsResult.data ?? []
+  const visibleFiles = (filesResult.data ?? []).filter((file) => !suppressedProviderFileErrors.has(file.extraction_error_code))
+  const sourceIndex = buildSourceIndex(accounts, messagesResult.data ?? [], visibleFiles)
+  const messages = (messagesResult.data ?? []).map((message) => {
+    const account = accounts.find((candidate) => candidate.id === message.account_id)
+    return {
+      ...message,
+      source_web_url: gmailMessageUrl(account?.email, message.provider_message_id),
+    }
+  })
+
   writeJson(response, 200, {
-    accounts: accountsResult.data ?? [],
+    accounts,
     approvals: (approvalsResult.data ?? []).map(normalizeApproval),
-    counts: { documents: (documentsResult.count ?? 0) + (filesCountResult.count ?? 0), messages: messagesCountResult.count ?? 0 },
-    deadlines: deadlinesResult.data ?? [],
-    files: filesResult.data ?? [],
+    counts: { documents: (documentsResult.count ?? 0) + visibleFiles.length, messages: messagesCountResult.count ?? 0 },
+    deadlines: (deadlinesResult.data ?? []).map((row) => enrichSourceLinkedRow(row, sourceIndex)),
+    files: visibleFiles.map((file) => ({
+      ...file,
+      source_label: sourceIndex.get(`drive://${file.account_id}/${file.provider_file_id}`)?.label ?? null,
+    })),
     knowledgeItems: knowledgeResult.data ?? [],
-    messages: messagesResult.data ?? [],
+    messages,
     notifications: notificationsResult.data ?? [],
-    obligations: obligationsResult.data ?? [],
+    obligations: (obligationsResult.data ?? []).map((row) => enrichSourceLinkedRow(row, sourceIndex)),
     sourceSnapshots: sourceSnapshotsResult.data ?? [],
     sources: sourcesResult.data ?? [],
   }, context.state)

@@ -24,6 +24,7 @@ export interface DashboardResponse {
     processing_status: string
     provider_message_id: string
     received_at: string | null
+    source_web_url?: string | null
     snippet: string | null
     subject: string | null
   }>
@@ -42,6 +43,7 @@ export interface DashboardResponse {
     provider_file_id: string
     extraction_error_code: string | null
     extraction_status: string | null
+    source_label?: string | null
     size_bytes: number | null
     status: string
     web_url: string | null
@@ -90,10 +92,14 @@ export interface DashboardResponse {
   }>
   counts: { documents: number; messages: number }
   deadlines: Array<{
+    display_title?: string | null
     due_at: string
     evidence_level: string
     id: string
     owner: string
+    source_excerpt?: string | null
+    source_label?: string | null
+    source_web_url?: string | null
     source_url: string | null
     status: string
     title: string
@@ -103,11 +109,15 @@ export interface DashboardResponse {
     authority: string
     category: string
     currency: string
+    display_title?: string | null
     due_date: string | null
     evidence_level: string
     id: string
     note: string | null
     payment_guidance: Record<string, unknown> | null
+    source_excerpt?: string | null
+    source_label?: string | null
+    source_web_url?: string | null
     source_url: string | null
     status: string
     title: string
