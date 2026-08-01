@@ -206,6 +206,118 @@ const preventiveChecklist = [
   },
 ]
 
+const featureLaunchpad = [
+  { area: 'Akıllı arama', detail: 'Belge, mail, ödeme ve süre kayıtlarında tek kutudan doğal dil arama.', owner: 'Genel Bakış' },
+  { area: 'Otomatik belge adı', detail: 'Kurum, tarih, tür ve tutardan arşiv adı önerisi.', owner: 'Evrak Kasası' },
+  { area: 'Güven skoru', detail: 'Tutar, kurum, son tarih, kaynak ve özet eksikse açık uyarı.', owner: 'Evrak Kasası' },
+  { area: 'Kurum profili', detail: 'Ödeme, itiraz, taksit ve portal linkleri tek kurum kartında.', owner: 'Kaynaklar' },
+  { area: 'Berichtenbox akışı', detail: 'DigiD otomasyonu yapmadan resmi mesajı içeri alma rehberi.', owner: 'Yaşam Radar' },
+  { area: 'Hatırlatma ladder', detail: '14/7/2/0/geçti takibi ve Google Takvim/.ics aksiyonu.', owner: 'Ödeme Planı' },
+  { area: 'Karar sihirbazı', detail: 'Öde / itiraz et / taksit iste seçeneklerini riskle gösterir.', owner: 'Ödeme Planı' },
+  { area: 'Onay workflow', detail: 'Belirsiz/tutarı yüksek/kritik kayıtları insan kontrolüne taşır.', owner: 'Onay Merkezi' },
+  { area: 'AI mail kuralları', detail: 'CJIB/IND/belediye/toeslagen gibi sinyallerin sınıflandırma kuralı.', owner: 'Ayarlar' },
+  { area: 'Düzeltmeden öğrenme', detail: 'Senin düzeltmeni bilgi bankasına kaydedip sonraki yorumlara katar.', owner: 'Ayarlar' },
+  { area: 'Hayat takvimi', detail: 'Ceza, borç, IND, hamilelik ve kurum sürelerini tek timeline yapar.', owner: 'Yaşam Radar' },
+  { area: 'Paylaşımlı görünüm', detail: 'Avukat/eş/muhasebe için kısıtlı paylaşım kapsamı taslağı.', owner: 'Yaşam Radar' },
+]
+
+const institutionProfiles = [
+  {
+    match: /\b(cjib|centraal justitieel|verkeersboete|bekeuring)\b/i,
+    name: 'CJIB',
+    purpose: 'Trafik cezası, ödeme, taksit ve itiraz akışları.',
+    portalUrl: 'https://www.cjib.nl/direct-regelen/ik-wil-graag/ik-wil-betalen',
+    objectionUrl: 'https://www.cjib.nl/direct-regelen/ik-ben-het-niet-eens-met-mijn-boete/ik-ben-het-niet-eens-met-een-verkeersboete',
+    planUrl: 'https://www.cjib.nl/betalen-in-delen-aanvragen',
+    risk: 'Ödeme, taksit ve itiraz kararını aynı anda alma; önce kenmerk/tutar/tarih eşleşsin.',
+  },
+  {
+    match: /\b(den haag|denhaag|gemeente den haag|mijndenhaag|haagse)\b/i,
+    name: 'Gemeente Den Haag',
+    purpose: 'Parkeerbon, belediye faturası, taksit ve bezwaar kanalları.',
+    portalUrl: 'https://www.denhaag.nl/nl/parkeren/parkeerbon-naheffingsaanslag/',
+    objectionUrl: 'https://www.denhaag.nl/nl/parkeren/bezwaar-maken-tegen-een-parkeerbon-naheffingsaanslag/',
+    planUrl: 'https://www.denhaag.nl/nl/belastingen/betalingsregeling-belastingen-aanvragen/',
+    risk: 'Dagtekening, aanslagnummer ve ödeme kenmerk bilgisi görünmeden işlem yapma.',
+  },
+  {
+    match: /\b(amsterdam|gemeente amsterdam|belastingbalie)\b/i,
+    name: 'Gemeente Amsterdam',
+    purpose: 'Parkeerbon, gemeentelijke belastingen ve ödeme düzeni.',
+    portalUrl: 'https://belastingbalie.amsterdam.nl/',
+    objectionUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/bezwaar-maken-parkeerbon/',
+    planUrl: 'https://www.amsterdam.nl/parkeren/parkeerbon/betalingsregeling-afspreken-parkeerbon/',
+    risk: 'Parkeerbon ile gemeentelijke belasting ödeme düzenleri farklı olabilir.',
+  },
+  {
+    match: /\b(belastingdienst|toeslagen|belasting)\b/i,
+    name: 'Belastingdienst / Toeslagen',
+    purpose: 'Vergi, toeslagen, ödeme ve geri ödeme riski.',
+    portalUrl: 'https://www.belastingdienst.nl/wps/wcm/connect/nl/betalen-en-ontvangen/betalen-en-ontvangen',
+    objectionUrl: 'https://www.belastingdienst.nl/wps/wcm/connect/nl/bezwaar-en-beroep/bezwaar-en-beroep',
+    planUrl: 'https://www.belastingdienst.nl/wps/wcm/connect/nl/betalen-en-ontvangen/content/betalingsregeling-aanvragen',
+    risk: 'Gelir/aile değişikliği geç bildirilirse sonradan borç doğabilir.',
+  },
+  {
+    match: /\b(ind|immigratie|kennismigrant|residence|oturum)\b/i,
+    name: 'IND',
+    purpose: 'Oturum, kennismigrant, aile birleşimi, belge ve süre takibi.',
+    portalUrl: 'https://ind.nl/en/residence-permits/work/highly-skilled-migrant',
+    objectionUrl: 'https://ind.nl/en/decision-on-your-application/objecting-to-the-decision-on-your-application',
+    planUrl: 'https://ind.nl/en/service-contact/contact-with-ind',
+    risk: 'Avukat ve resmi karar mektubu olmadan kesin hukuki karar üretme.',
+  },
+  {
+    match: /\b(mijnoverheid|berichtenbox|digid|rijksoverheid)\b/i,
+    name: 'MijnOverheid / Berichtenbox',
+    purpose: 'Resmi devlet mesajları ve ekleri için manuel içe alma kapısı.',
+    portalUrl: 'https://mijnoverheid.nl/',
+    objectionUrl: 'https://www.digid.nl/',
+    planUrl: 'https://mijnoverheid.nl/',
+    risk: 'DigiD şifresi saklanmaz; kullanıcı manuel indirip Drive inbox’a koyar.',
+  },
+]
+
+const emailAutomationRules = [
+  { match: 'CJIB, parkeerbon, naheffing, boete', action: 'Ceza olarak işaretle, tutar/kenmerk/dagtekening/son ödeme çıkar, yüksek öncelik ver.' },
+  { match: 'IND, kennismigrant, residence, bezwaar', action: 'Hukuk/IND olarak işaretle, avukat kontrolü ve belge paketi görevi üret.' },
+  { match: 'Belastingdienst, toeslagen, aanslag', action: 'Vergi/borç olarak işaretle, ödeme ve bezwaar sürelerini ayrı göster.' },
+  { match: 'Gemeente, Waterland, Den Haag, Amsterdam', action: 'Belediye profiliyle eşleştir, ödeme/taksit/itiraz linklerini bağla.' },
+  { match: 'Reclame, nieuwsbrief, marketing', action: 'Düşük öncelik; ödeme/süre çıkmadıysa evrak kasasına aksiyon üretme.' },
+]
+
+const berichtenboxSteps = [
+  'MijnOverheid / Berichtenbox’a kullanıcı manuel DigiD ile girer.',
+  'Yeni resmi mesajın PDF/ekini indirir veya telefonda paylaş/kaydet yapar.',
+  'Dosyayı Drive içindeki “Muh Agent Inbox” klasörüne koyar.',
+  'Dashboard’da “Belgeleri şimdi oku” çalışır; kurum, tutar, süre ve kaynak panelde görünür.',
+  'Ajan otomatik ödeme veya resmi başvuru yapmaz; sadece aksiyon taslağı ve onay kaydı üretir.',
+]
+
+const shareScopes = [
+  { audience: 'Avukat görünümü', detail: 'Sadece IND/mahkeme dosyaları, tarihçe, kaynak linki ve belge paketi taslağı.' },
+  { audience: 'Eş görünümü', detail: 'Ortak ödeme, hamilelik, belediye ve aile takvimi; hassas teknik log yok.' },
+  { audience: 'Muhasebe görünümü', detail: 'Fatura/vergi/ödeme belgeleri; IND sağlık ve özel notlar kapalı.' },
+]
+
+const learningTemplates = [
+  {
+    category: 'skill' as const,
+    title: 'Düzeltme: kurum/tarih/tutar öğrenme kuralı',
+    body: 'Kullanıcı bir belgede kurum, belge türü, tutar veya son tarihi düzeltirse aynı gönderen/kurum/anahtar kelime için sonraki belgelerde bu düzeltme öneri olarak kullanılacak; yine kaynak doğrulaması istenecek.',
+  },
+  {
+    category: 'fine' as const,
+    title: 'Ceza kararı: ödeme/itiraz/taksit ayrımı',
+    body: 'Ceza belgesinde ödeme, bezwaar/itiraz ve taksit seçenekleri ayrı aksiyon olarak gösterilecek. Belge numarası, dagtekening, tutar ve resmi portal linki görülmeden kesin ödeme önerilmeyecek.',
+  },
+  {
+    category: 'immigration' as const,
+    title: 'IND dosyası: avukat kontrolü zorunlu',
+    body: 'IND, kennismigrant, erkend referent, bezwaar veya oturum iptali içeren kayıtlar ödeme gibi kapatılmayacak; avukat kontrolü ve belge paketi görevi üretilecek.',
+  },
+]
+
 const formatEuro = (amount: number) =>
   new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount)
 
@@ -279,6 +391,87 @@ function guidanceForObligation(item: Pick<Obligation, 'authority' | 'note' | 'pa
   if (item.paymentGuidance && Object.keys(item.paymentGuidance).length > 0) return item.paymentGuidance
   const haystack = `${item.authority} ${item.title} ${item.note}`
   return officialPaymentGuides.find((guide) => guide.match.test(haystack))?.guidance
+}
+
+function authorityProfileFor(text: string) {
+  return institutionProfiles.find((profile) => profile.match.test(text)) ?? institutionProfiles[institutionProfiles.length - 1]
+}
+
+function searchText(...parts: Array<string | undefined | null>) {
+  return parts.filter(Boolean).join(' ').toLocaleLowerCase('tr-TR')
+}
+
+function matchesQuery(query: string, ...parts: Array<string | undefined | null>) {
+  const term = query.trim().toLocaleLowerCase('tr-TR')
+  if (!term) return true
+  return searchText(...parts).includes(term)
+}
+
+function documentConfidence(file: ProviderFile) {
+  const missing: string[] = []
+  const extraction = extractionRecord(file)
+  const amount = extractionAmount(file)
+  const authority = fileAuthority(file)
+  const dueDate = extractionText(file, 'due_date')
+  const summary = extractionSummary(file)
+  if (!extraction) missing.push('içerik OCR')
+  if (!authority || authority === file.classification) missing.push('kurum')
+  if (amount === null && ['Ceza', 'Fatura / ödeme', 'Vergi / belediye'].includes(fileCategory(file))) missing.push('tutar')
+  if (!dueDate && ['Ceza', 'Fatura / ödeme', 'Vergi / belediye', 'Hukuk / IND'].includes(fileCategory(file))) missing.push('son tarih')
+  if (!file.webUrl) missing.push('kaynak linki')
+  if (!summary || summary === 'İçerik okuma bekliyor.') missing.push('özet')
+  const score = Math.max(30, 100 - missing.length * 12 - (file.extractionStatus === 'failed' ? 25 : 0) - (file.extractionStatus === 'pending' ? 20 : 0))
+  return { label: score >= 86 ? 'Yüksek güven' : score >= 65 ? 'Kontrol et' : 'Eksik okuma', missing, score }
+}
+
+function suggestedDocumentName(file: ProviderFile) {
+  const date = extractionText(file, 'due_date') ?? file.modifiedAt?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)
+  const authority = fileAuthority(file).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 60)
+  const category = fileCategory(file).replaceAll(' / ', '-').replace(/[\\/:*?"<>|]+/g, '-')
+  const amount = extractionAmount(file)
+  return `${date} - ${authority || 'Bilinmeyen kurum'} - ${category}${amount === null ? '' : ` - ${formatEuro(amount).replace(/\s/g, '')}`}.pdf`
+}
+
+function reminderMilestones(date: string) {
+  const days = validPaymentDate(date) ? daysUntil(date) : null
+  if (days === null) return ['Tarih okununca 14/7/2/0 gün uyarıları hazırlanır.']
+  if (days < 0) return [`${Math.abs(days)} gün geçti`, 'Bugün kontrol', 'Kaynak doğrula', 'Onay Merkezi']
+  return ['14 gün kala hazırlık', '7 gün kala kaynak kontrolü', '2 gün kala alarm', days === 0 ? 'Bugün son gün' : `${days} gün kaldı`]
+}
+
+function decisionOptionsFor(item: Obligation) {
+  const guidance = guidanceForObligation(item)
+  const time = paymentTimeLabel(item)
+  return [
+    {
+      action: 'Öde',
+      detail: guidance?.paymentMethod ?? 'Resmi portal veya belgedeki kenmerk ile ödeme doğrulanmalı.',
+      risk: item.amount > 250 || time.days === null ? 'Kontrol' : 'Uygun',
+      url: guidance?.paymentUrl,
+    },
+    {
+      action: 'İtiraz et',
+      detail: guidance?.warning ?? 'İtiraz süresi ve ödeme gerekip gerekmediği resmi sayfadan kontrol edilmeli.',
+      risk: 'Avukat/kaynak',
+      url: guidance?.objectionUrl,
+    },
+    {
+      action: 'Taksit iste',
+      detail: guidance?.installmentSummary ?? 'Kurumun ödeme düzeni sayfasından koşul kontrol edilmeli.',
+      risk: 'Koşullu',
+      url: guidance?.paymentPlanUrl,
+    },
+  ]
+}
+
+function lifeCalendarItems(obligationItems: Obligation[], deadlineItems: Deadline[]) {
+  const paymentItems = obligationItems
+    .filter((item) => item.status !== 'paid' && validPaymentDate(item.dueDate))
+    .map((item) => ({ date: item.dueDate, title: item.title, meta: `${item.authority} · ${item.amount ? formatEuro(item.amount) : 'Tutar belirsiz'}`, kind: 'Ödeme' }))
+  const deadlineRows = deadlineItems
+    .filter((item) => item.status !== 'done')
+    .map((item) => ({ date: item.date, title: item.title, meta: item.owner, kind: 'Süre' }))
+  return [...paymentItems, ...deadlineRows].sort((a, b) => daysUntil(a.date) - daysUntil(b.date)).slice(0, 10)
 }
 
 function mapDashboard(payload: DashboardResponse) {
@@ -599,12 +792,12 @@ function App() {
       case 'payments': return <PaymentsView items={activeObligations} live={liveMode} onOpenApprovals={() => setView('approvals')} />
       case 'documents': return <DocumentsView documentCount={liveCounts.documents} extracting={extractingDocuments} files={activeFiles} live={liveMode} onExtract={runDocumentExtraction} />
       case 'deadlines': return <DeadlinesView items={activeDeadlines} live={liveMode} />
-      case 'life': return <LifeRadarView knowledge={activeKnowledge} live={liveMode} notifications={activeNotifications} onOpenSettings={() => setView('settings')} />
+      case 'life': return <LifeRadarView deadlines={activeDeadlines} knowledge={activeKnowledge} live={liveMode} notifications={activeNotifications} obligations={activeObligations} onOpenSettings={() => setView('settings')} />
       case 'approvals': return <ApprovalsView deadlines={activeDeadlines} items={approvalsState} live={liveMode} obligations={activeObligations} onApprove={approve} onNavigate={setView} />
       case 'sources': return <SourcesView sources={activeSources} />
       case 'settings': return <SettingsView accounts={activeAccounts} knowledge={activeKnowledge} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSaveKnowledge={saveKnowledge} onSignOut={leaveSession} />
       default:
-        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} documentCount={liveCounts.documents} live={liveMode} loginRequired={loginRequired} notifications={activeNotifications} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
+        return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} documentCount={liveCounts.documents} files={activeFiles} live={liveMode} loginRequired={loginRequired} messages={activeMessages} notifications={activeNotifications} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
     }
   })()
 
@@ -775,11 +968,18 @@ function PageIntro({ eyebrow, title, detail, action }: { eyebrow: string; title:
   return <div className="page-intro"><div><div className="eyebrow">{eyebrow}</div><h2>{title}</h2><p>{detail}</p></div>{action}</div>
 }
 
-function OverviewView({ accounts, approvals, deadlines: deadlineItems, documentCount, live, loginRequired, notifications, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; documentCount: number; live: boolean; loginRequired: boolean | undefined; notifications: NotificationItem[]; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
+function OverviewView({ accounts, approvals, deadlines: deadlineItems, documentCount, files, live, loginRequired, messages, notifications, obligations: obligationItems, onLogin, onNavigate }: { accounts: MailAccount[]; approvals: ApprovalItem[]; deadlines: Deadline[]; documentCount: number; files: ProviderFile[]; live: boolean; loginRequired: boolean | undefined; messages: DashboardMessage[]; notifications: NotificationItem[]; obligations: Obligation[]; onLogin: () => void; onNavigate: (view: ViewId) => void }) {
+  const [searchQuery, setSearchQuery] = useState('')
   const dueSoon = deadlineItems.filter((item) => item.status !== 'done' && daysUntil(item.date) <= 7).length
   const totalOpen = obligationItems.filter((item) => item.status === 'open' || item.status === 'overdue').reduce((sum, item) => sum + item.amount, 0)
   const connectedAccounts = accounts.filter((item) => item.status === 'connected').length
   const activityItems = live ? [{ id: 'live-session', time: 'Şimdi', title: 'Korumalı oturum doğrulandı', detail: 'Kayıtlar kullanıcıya ait RLS kurallarıyla okundu.', kind: 'system' as const }] : activities
+  const smartResults = [
+    ...obligationItems.filter((item) => matchesQuery(searchQuery, item.title, item.authority, item.note, item.sourceLabel)).slice(0, 4).map((item) => ({ id: `o-${item.id}`, type: 'Ödeme', title: item.title, detail: `${item.authority} · ${item.amount ? formatEuro(item.amount) : 'Tutar belirsiz'} · ${item.dueDate}`, view: 'payments' as ViewId })),
+    ...deadlineItems.filter((item) => matchesQuery(searchQuery, item.title, item.owner, item.sourceLabel)).slice(0, 4).map((item) => ({ id: `d-${item.id}`, type: 'Süre', title: item.title, detail: `${item.owner} · ${item.date}`, view: 'deadlines' as ViewId })),
+    ...files.filter((item) => matchesQuery(searchQuery, item.name, fileAuthority(item), fileCategory(item), extractionSummary(item))).slice(0, 4).map((item) => ({ id: `f-${item.id}`, type: 'Evrak', title: item.name, detail: `${fileCategory(item)} · ${documentConfidence(item).label}`, view: 'documents' as ViewId })),
+    ...messages.filter((item) => matchesQuery(searchQuery, item.subject, item.from, item.snippet, item.accountEmail)).slice(0, 4).map((item) => ({ id: `m-${item.id}`, type: 'Mail', title: item.subject, detail: `${item.accountEmail} · ${item.classification}`, view: 'inbox' as ViewId })),
+  ].slice(0, 8)
   return <>
     <PageIntro eyebrow="BUGÜNÜN KONTROL MERKEZİ" title="Önce neyi güvene alıyoruz?" detail="Muh Agent, para hareketi yapmadan önce kanıtı, son tarihi ve insan onayını aynı yerde toplar." action={loginRequired ? <button className="button primary" data-testid="overview-login" onClick={onLogin}>Dashboard'dan giriş yap <span>→</span></button> : <button className="button primary" onClick={() => onNavigate('approvals')}>Onay kuyruğunu aç <span>→</span></button>} />
     <div className="truth-banner"><span className="banner-icon">!</span><div><strong>{loginRequired ? 'Dashboard önizleme açık — kişisel kayıtların için giriş yap.' : live ? 'Kişisel kasa oturumu doğrulandı; dış işlemler yine kapalı.' : 'Şu anda gerçek Gmail, banka, DigiD veya belge bağlantısı yok.'}</strong><p>{loginRequired ? 'Girişte yalnızca e-posta ve şifre kullanılır; e-posta veya kod gönderilmez. Giriş yaptığında yalnızca sana ait kayıtlar yüklenir.' : live ? 'Canlı kayıtlar RLS ile sınırlandı. Onay vermek yalnızca kararı kaydeder; ödeme veya gönderim ayrı ve denetimli bir adımdır.' : 'Bu ekran yalnızca ürün temelini gösterir. Demo kayıtları ile gerçek kayıtlar birbirine karıştırılmayacak.'}</p></div><EvidencePill level={loginRequired ? 'review' : live ? 'verified' : 'demo'} /></div>
@@ -790,6 +990,14 @@ function OverviewView({ accounts, approvals, deadlines: deadlineItems, documentC
       <MetricCard label="Bağlı hesap" value={String(connectedAccounts)} suffix=" / 4" detail={connectedAccounts ? 'Salt-okunur OAuth' : 'OAuth kurulumu bekliyor'} tone="green" />
     </div>
     {notifications.length > 0 && <section className="panel notification-strip"><div><div className="eyebrow">CANLI UYARILAR</div><h3>{notifications.length} yeni radar kaydı</h3></div><button className="button secondary" onClick={() => onNavigate('life')}>Yaşam Radar’ı aç →</button></section>}
+    <section className="panel smart-command-panel">
+      <div className="panel-head"><div><div className="eyebrow">AKILLI KOMUT MERKEZİ</div><h3>Belge, mail, ödeme ve süre içinde ara</h3></div><span className="pill evidence-verified">{featureLaunchpad.length} özellik aktif</span></div>
+      <div className="smart-command-body">
+        <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Örn. Den Haag cezası, IND, 150 euro, hamilelik, son ödeme…" aria-label="Akıllı arama" />
+        <div className="smart-result-grid">{smartResults.length ? smartResults.map((item) => <button className="smart-result-card" key={item.id} onClick={() => onNavigate(item.view)}><span className="pill evidence-review">{item.type}</span><strong>{item.title}</strong><small>{item.detail}</small></button>) : <div className="empty-inline">Arama sonucu yok. Farklı kelime dene veya yeni belgeleri Evrak Kasası’nda okut.</div>}</div>
+      </div>
+      <div className="feature-launchpad">{featureLaunchpad.map((feature) => <button className="feature-chip" key={feature.area} onClick={() => onNavigate(feature.owner === 'Evrak Kasası' ? 'documents' : feature.owner === 'Ödeme Planı' ? 'payments' : feature.owner === 'Kaynaklar' ? 'sources' : feature.owner === 'Ayarlar' ? 'settings' : feature.owner === 'Onay Merkezi' ? 'approvals' : feature.owner === 'Yaşam Radar' ? 'life' : 'overview')}><strong>{feature.area}</strong><span>{feature.owner}</span></button>)}</div>
+    </section>
     <div className="overview-grid">
       <section className="panel priority-panel">
         <div className="panel-head"><div><div className="eyebrow">ÖNCELİK KUYRUĞU</div><h3>Bugün ilgilenmen gerekenler</h3></div><button className="text-button" onClick={() => onNavigate('deadlines')}>Tümünü gör →</button></div>
@@ -978,6 +1186,7 @@ function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; l
     return days !== null && days >= 0 && days <= 14
   }).length
   const authorityGroups = groupByAuthority(sorted)
+  const nextActionItem = openItems.find((item) => validPaymentDate(item.dueDate)) ?? openItems[0]
 
   return <>
     <PageIntro
@@ -992,6 +1201,7 @@ function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; l
       <MetricCard label="Geciken" value={String(overdue)} suffix=" kayıt" detail="Bugün aksiyon gerekir" tone="violet" />
       <MetricCard label="Kurum sayısı" value={String(authorityGroups.length)} suffix="" detail="Toplu ödeme/taksit kontrolü" tone="green" />
     </div>
+    {nextActionItem && <section className="panel decision-panel"><div className="panel-head"><div><div className="eyebrow">KARAR SİHİRBAZI</div><h3>{nextActionItem.title}</h3></div><span className="pill evidence-review">{paymentTimeLabel(nextActionItem).label}</span></div><div className="decision-grid">{decisionOptionsFor(nextActionItem).map((option) => <article className="decision-card" key={option.action}><span className="pill evidence-review">{option.risk}</span><h3>{option.action}</h3><p>{option.detail}</p>{option.url && <a href={option.url} target="_blank" rel="noreferrer">Resmi kanal ↗</a>}</article>)}</div><div className="reminder-ladder">{reminderMilestones(nextActionItem.dueDate).map((step, index) => <span key={`${step}-${index}`}>{step}</span>)}</div></section>}
     <section className="panel authority-panel">
       <div className="panel-head"><div><div className="eyebrow">KURUMA GÖRE TOPLAM</div><h3>Hangi kuruma ne kadar ve nereden ödenecek</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{live ? 'Canlı belge kayıtları' : 'Demo veri'}</span></div>
       <div className="authority-grid">
@@ -1127,11 +1337,14 @@ function DocumentsView({ documentCount, extracting, files, live, onExtract }: { 
   const categories = ['Tümü', 'Ceza', 'Fatura / ödeme', 'Vergi / belediye', 'Hukuk / IND', 'Sağlık / hak', 'Okunacak', 'Diğer', 'Hata']
   const [activeCategory, setActiveCategory] = useState('Tümü')
   const [selectedId, setSelectedId] = useState(files[0]?.id ?? '')
-  const visibleFiles = activeCategory === 'Tümü' ? files : files.filter((file) => fileCategory(file) === activeCategory)
+  const [fileQuery, setFileQuery] = useState('')
+  const visibleFiles = (activeCategory === 'Tümü' ? files : files.filter((file) => fileCategory(file) === activeCategory))
+    .filter((file) => matchesQuery(fileQuery, file.name, fileAuthority(file), fileCategory(file), extractionSummary(file), file.accountEmail))
   const selectedFile = files.find((file) => file.id === selectedId) ?? visibleFiles[0] ?? files[0]
   const counts = new Map(categories.map((category) => [category, category === 'Tümü' ? files.length : files.filter((file) => fileCategory(file) === category).length]))
+  const selectedConfidence = selectedFile ? documentConfidence(selectedFile) : null
 
-  return <><PageIntro eyebrow="EVRAK KASASI" title={live ? `${documentCount} görünür belge / Drive kaydı` : 'Belgeleri tek bir güven zincirinde topla'} detail={live ? 'Muh Agent Inbox klasöründeki PDF/JPG/PNG/HEIC belgeler içerikten okunur; kurum, borç/ceza türü, tutar, son tarih, itiraz süresi ve kaynak linki aynı kartta gösterilir.' : 'Canlı ortamda Drive belgesi OCR ile okunup yükümlülük ve süre kayıtlarına dönüştürülür.'} action={<button className="button primary" disabled={extracting} onClick={() => void onExtract()}>{extracting ? 'Belgeler okunuyor…' : 'Belgeleri şimdi oku'}</button>} /><section className="panel drive-file-panel"><div className="panel-head"><div><div className="eyebrow">BELGE OKUMA DURUMU</div><h3>Kategorili kasa ve okunabilir belge detayları</h3></div><span className={`pill evidence-${readCount ? 'verified' : 'review'}`}>{readCount} ödeme/aksiyon belgesi · {files.length} görünür kayıt</span></div><div className="category-tabs">{categories.filter((category) => counts.get(category)).map((category) => <button className={category === activeCategory ? 'category-tab active' : 'category-tab'} key={category} onClick={() => setActiveCategory(category)}>{category}<span>{counts.get(category)}</span></button>)}</div><div className="document-workbench"><div className="file-list">{visibleFiles.length ? visibleFiles.map((file) => { const line = extractionLine(file); return <button className={selectedFile?.id === file.id ? 'file-row file-row-expanded selectable active' : 'file-row file-row-expanded selectable'} key={file.id} onClick={() => setSelectedId(file.id)}><div className={`file-icon ${file.status === 'review_required' || file.extractionStatus === 'extracted' ? 'hot' : ''}`}>▤</div><div className="file-main"><div className="message-meta"><span>{file.accountEmail}</span><span>{file.modifiedAt ? new Date(file.modifiedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span><span>{formatFileSize(file.sizeBytes)}</span></div><strong>{file.name}</strong><p>{extractionSummary(file)}</p>{line && <small className="extract-line">{line}</small>}</div><div className="file-actions"><span className={`pill evidence-${fileStatusTone(file)}`}>{fileExtractionLabel[file.extractionStatus]}</span><span className="pill evidence-review">{fileCategory(file)}</span></div></button> }) : <div className="empty-inline">Bu kategoride belge yok.</div>}</div>{selectedFile && <aside className="document-detail-panel"><div className="detail-header"><div><div className="eyebrow">SEÇİLİ BELGE</div><h3>{extractionText(selectedFile, 'title') ?? selectedFile.name}</h3></div><span className={`pill evidence-${fileStatusTone(selectedFile)}`}>{fileExtractionLabel[selectedFile.extractionStatus]}</span></div><p>{extractionSummary(selectedFile)}</p><div className="detail-field-grid">{fileDetailFields(selectedFile).map((field) => <div className="detail-field" key={field.label}><span>{field.label}</span><strong>{field.value}</strong></div>)}</div>{extractionText(selectedFile, 'action_summary_tr') && <div className="detail-action"><strong>Aksiyon</strong><p>{extractionText(selectedFile, 'action_summary_tr')}</p></div>}<div className="action-tags"><button className="tag-button" onClick={() => navigator.clipboard?.writeText(extractionSummary(selectedFile))}>Özeti kopyala</button>{selectedFile.webUrl && <a className="tag-button" href={selectedFile.webUrl} target="_blank" rel="noreferrer">Belgeyi Drive’da aç ↗</a>}{selectedFile.sourceLabel && <span className="tag-note">{selectedFile.sourceLabel}</span>}</div>{selectedFile.extractionStatus === 'pending' && <div className="info-callout"><strong>Okuma bekliyor.</strong><span>“Belgeleri şimdi oku” düğmesi bu belgeyi OCR kuyruğuna alır.</span></div>}{selectedFile.extractionStatus === 'skipped' && extractionRecord(selectedFile) && <div className="info-callout"><strong>Okundu ama ödeme/son tarih çıkmadı.</strong><span>Bu yanlışsa belgeyi daha net PDF/JPG olarak tekrar yükle veya aynı belgenin tüm sayfalarını tek PDF yap.</span></div>}</aside>}</div></section><div className="dropzone"><div className="drop-icon">＋</div><h3>Telefonla tara → “Muh Agent Inbox” klasörüne koy → “Belgeleri şimdi oku”</h3><p>En hızlı yol Google Drive Scan ile tek PDF oluşturmak. Bir ceza/fatura birden fazla fotoğraftaysa hepsini tek PDF yapmak OCR doğruluğunu artırır.</p><EvidencePill level="review" /></div><div className="document-grid"><DocumentCard title="Ceza / CJIB / belediye" detail="Tutar, son ödeme, bezwaar ve resmi ödeme kanalı çıkarılır" status="OCR" /><DocumentCard title="Vergi / fatura" detail="Kurum, ödeme referansı, taksit/plan kontrolü ayrılır" status="OCR" /><DocumentCard title="IND / mahkeme / sağlık" detail="Süre, belge teslimi ve insan kontrolü paneline düşer" status="İnceleme" /></div></>
+  return <><PageIntro eyebrow="EVRAK KASASI" title={live ? `${documentCount} görünür belge / Drive kaydı` : 'Belgeleri tek bir güven zincirinde topla'} detail={live ? 'Muh Agent Inbox klasöründeki PDF/JPG/PNG/HEIC belgeler içerikten okunur; kurum, borç/ceza türü, tutar, son tarih, itiraz süresi ve kaynak linki aynı kartta gösterilir.' : 'Canlı ortamda Drive belgesi OCR ile okunup yükümlülük ve süre kayıtlarına dönüştürülür.'} action={<button className="button primary" disabled={extracting} onClick={() => void onExtract()}>{extracting ? 'Belgeler okunuyor…' : 'Belgeleri şimdi oku'}</button>} /><section className="panel drive-file-panel"><div className="panel-head"><div><div className="eyebrow">BELGE OKUMA DURUMU</div><h3>Kategorili kasa, akıllı arama ve güven skoru</h3></div><span className={`pill evidence-${readCount ? 'verified' : 'review'}`}>{readCount} ödeme/aksiyon belgesi · {files.length} görünür kayıt</span></div><div className="vault-toolbar"><input value={fileQuery} onChange={(event) => setFileQuery(event.target.value)} placeholder="Evrakta ara: kurum, tutar, ceza, IND, tarih…" aria-label="Evrak arama" /><span>{visibleFiles.length} sonuç</span></div><div className="category-tabs">{categories.filter((category) => counts.get(category)).map((category) => <button className={category === activeCategory ? 'category-tab active' : 'category-tab'} key={category} onClick={() => setActiveCategory(category)}>{category}<span>{counts.get(category)}</span></button>)}</div><div className="document-workbench"><div className="file-list">{visibleFiles.length ? visibleFiles.map((file) => { const line = extractionLine(file); const confidence = documentConfidence(file); return <button className={selectedFile?.id === file.id ? 'file-row file-row-expanded selectable active' : 'file-row file-row-expanded selectable'} key={file.id} onClick={() => setSelectedId(file.id)}><div className={`file-icon ${file.status === 'review_required' || file.extractionStatus === 'extracted' ? 'hot' : ''}`}>▤</div><div className="file-main"><div className="message-meta"><span>{file.accountEmail}</span><span>{file.modifiedAt ? new Date(file.modifiedAt).toLocaleString('tr-TR') : 'Tarih yok'}</span><span>{formatFileSize(file.sizeBytes)}</span></div><strong>{file.name}</strong><p>{extractionSummary(file)}</p>{line && <small className="extract-line">{line}</small>}<small className="source-excerpt">Önerilen ad: {suggestedDocumentName(file)}</small></div><div className="file-actions"><span className={`pill evidence-${fileStatusTone(file)}`}>{fileExtractionLabel[file.extractionStatus]}</span><span className={`pill evidence-${confidence.score >= 86 ? 'verified' : 'review'}`}>{confidence.score}% · {confidence.label}</span><span className="pill evidence-review">{fileCategory(file)}</span></div></button> }) : <div className="empty-inline">Bu kategoride/arama teriminde belge yok.</div>}</div>{selectedFile && selectedConfidence && <aside className="document-detail-panel"><div className="detail-header"><div><div className="eyebrow">SEÇİLİ BELGE</div><h3>{extractionText(selectedFile, 'title') ?? selectedFile.name}</h3></div><span className={`pill evidence-${selectedConfidence.score >= 86 ? 'verified' : 'review'}`}>{selectedConfidence.score}%</span></div><p>{extractionSummary(selectedFile)}</p><div className="confidence-meter"><span style={{ width: `${selectedConfidence.score}%` }} /></div><div className="detail-action"><strong>Otomatik arşiv adı</strong><p>{suggestedDocumentName(selectedFile)}</p></div><div className="detail-field-grid">{fileDetailFields(selectedFile).map((field) => <div className="detail-field" key={field.label}><span>{field.label}</span><strong>{field.value}</strong></div>)}</div><div className="detail-action"><strong>Kurum profili</strong><p>{authorityProfileFor(fileAuthority(selectedFile)).name}: {authorityProfileFor(fileAuthority(selectedFile)).risk}</p></div>{selectedConfidence.missing.length > 0 && <div className="detail-action warning"><strong>Eksik / kontrol edilecek alanlar</strong><p>{selectedConfidence.missing.join(', ')}</p></div>}{extractionText(selectedFile, 'action_summary_tr') && <div className="detail-action"><strong>Aksiyon</strong><p>{extractionText(selectedFile, 'action_summary_tr')}</p></div>}<div className="action-tags"><button className="tag-button" onClick={() => navigator.clipboard?.writeText(`${suggestedDocumentName(selectedFile)}\n\n${extractionSummary(selectedFile)}`)}>Ad + özeti kopyala</button>{selectedFile.webUrl && <a className="tag-button" href={selectedFile.webUrl} target="_blank" rel="noreferrer">Belgeyi Drive’da aç ↗</a>}{selectedFile.sourceLabel && <span className="tag-note">{selectedFile.sourceLabel}</span>}</div>{selectedFile.extractionStatus === 'pending' && <div className="info-callout"><strong>Okuma bekliyor.</strong><span>“Belgeleri şimdi oku” düğmesi bu belgeyi OCR kuyruğuna alır.</span></div>}{selectedFile.extractionStatus === 'skipped' && extractionRecord(selectedFile) && <div className="info-callout"><strong>Okundu ama ödeme/son tarih çıkmadı.</strong><span>Bu yanlışsa belgeyi daha net PDF/JPG olarak tekrar yükle veya aynı belgenin tüm sayfalarını tek PDF yap.</span></div>}</aside>}</div></section><div className="dropzone"><div className="drop-icon">＋</div><h3>Telefonla tara → “Muh Agent Inbox” klasörüne koy → “Belgeleri şimdi oku”</h3><p>En hızlı yol Google Drive Scan ile tek PDF oluşturmak. Bir ceza/fatura birden fazla fotoğraftaysa hepsini tek PDF yapmak OCR doğruluğunu artırır.</p><EvidencePill level="review" /></div><div className="document-grid"><DocumentCard title="Ceza / CJIB / belediye" detail="Tutar, son ödeme, bezwaar ve resmi ödeme kanalı çıkarılır" status="OCR" /><DocumentCard title="Vergi / fatura" detail="Kurum, ödeme referansı, taksit/plan kontrolü ayrılır" status="OCR" /><DocumentCard title="IND / mahkeme / sağlık" detail="Süre, belge teslimi ve insan kontrolü paneline düşer" status="İnceleme" /></div></>
 }
 
 function DocumentCard({ title, detail, status }: { title: string; detail: string; status: string }) {
@@ -1145,8 +1358,9 @@ function DeadlinesView({ items, live }: { items: Deadline[]; live: boolean }) {
   }) : <div className="panel empty-inline">{live ? 'Canlı son tarih kaydı yok.' : 'Demo son tarih kaydı yok.'}</div>}</div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">DOSYA GÜVENLİĞİ</div><h3>IND dosyasında sonraki doğru adım</h3></div><EvidencePill level="review" /></div><p>Bu cockpit, yaşadığın oturum sürecinde belge listesi, son tarihler ve avukata sorulacak sorular için düzenleyici olabilir. “%100 sonuç”, gizli hile veya avukatın yerine karar verme iddiası yoktur.</p><div className="question-list"><span>□ Mevcut IND yazısının tarihi ve referans numarası kaydedildi mi?</span><span>□ Yeni işverenin erkend referent durumu avukat tarafından doğrulandı mı?</span><span>□ Maaş kriteri doğru yıl ve oturum türüyle eşleştirildi mi?</span></div></section></>
 }
 
-function LifeRadarView({ knowledge, live, notifications, onOpenSettings }: { knowledge: KnowledgeItem[]; live: boolean; notifications: NotificationItem[]; onOpenSettings: () => void }) {
-  return <><PageIntro eyebrow="YAŞAM RADAR" title="Hollanda’da seni etkileyen kurum, süre ve haklar" detail="Bu bölüm resmi kaynakları, bağlı Gmail sinyallerini ve senin manuel eklediğin bilgileri bir araya getirir. Hukuki/medikal karar yerine geçmez; avukat veya resmi kurumla doğrulanacak aksiyon listesi üretir." action={<button className="button primary" onClick={onOpenSettings}>Bilgi / skill ekle →</button>} /><div className="life-hero panel"><div><div className="eyebrow">KİŞİSEL BAĞLAM</div><h3>Adres: Nieuwland 51, Broek in Waterland 1151 AZ</h3><p>Belediye odağı: Gemeente Waterland. Öncelikler: IND dosyası, 5 yıl oturum eşiği, hamilelik hakları, CJIB/vergi/mahkeme yazışmaları ve Berichtenbox kontrolü.</p></div><EvidencePill level="review" /></div><div className="life-grid">{lifeRadarItems.map((item) => <article className="panel life-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.text}</p><small>{item.source}</small></article>)}</div><section className="panel preventive-panel"><div className="panel-head"><div><div className="eyebrow">ÖNLEYİCİ KONTROL LİSTESİ</div><h3>Yaşam kalitesini artıracak erken kontroller</h3></div><span className="pill evidence-review">{preventiveChecklist.length} başlık</span></div><div className="preventive-grid">{preventiveChecklist.map((item) => <article className="preventive-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.action}</p><small>{item.source}</small></article>)}</div></section><div className="overview-grid"><section className="panel"><div className="panel-head"><div><div className="eyebrow">CANLI UYARILAR</div><h3>Gmail/Drive/watchdog’ın yakaladığı riskler</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{notifications.length} kayıt</span></div><div className="notification-list">{notifications.length ? notifications.map((item) => <div className={`notification-row ${item.severity}`} key={item.id}><strong>{item.title}</strong><p>{item.body}</p><span>{new Date(item.createdAt).toLocaleString('tr-TR')}</span></div>) : <div className="empty-inline">{live ? 'Henüz canlı uyarı yok. Watchdog, Gmail ve Drive taramalarından sonra burada görünür.' : 'Canlı oturum yok; demo uyarı üretilmez.'}</div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ</div><h3>Manuel kayıtlı bilgi / skill</h3></div><button className="text-button" onClick={onOpenSettings}>Ekle →</button></div><div className="knowledge-list">{knowledge.length ? knowledge.slice(0, 6).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p>{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Kaynak ↗</a>}</div>) : <div className="empty-inline">Henüz manuel bilgi yok. Ayarlar’dan “skill / yöntem / hak” ekleyebilirsin.</div>}</div></section></div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">YETKİ SINIRI</div><h3>DigiD, BSN, ödeme ve resmi başvuru otomatikleşmez</h3></div><EvidencePill level="verified" /></div><p>Sistem sana kaynaklı kontrol listesi, belge paketi ve uyarı üretir. DigiD şifresi/BSN saklamaz; itiraz, ödeme, form gönderimi veya kurumla yazışma ancak ayrı ekranda metin ve kanıtı görüp sen onayladıktan sonra ilerler.</p></section></>
+function LifeRadarView({ deadlines: deadlineItems, knowledge, live, notifications, obligations: obligationItems, onOpenSettings }: { deadlines: Deadline[]; knowledge: KnowledgeItem[]; live: boolean; notifications: NotificationItem[]; obligations: Obligation[]; onOpenSettings: () => void }) {
+  const calendarItems = lifeCalendarItems(obligationItems, deadlineItems)
+  return <><PageIntro eyebrow="YAŞAM RADAR" title="Hollanda’da seni etkileyen kurum, süre ve haklar" detail="Bu bölüm resmi kaynakları, bağlı Gmail sinyallerini ve senin manuel eklediğin bilgileri bir araya getirir. Hukuki/medikal karar yerine geçmez; avukat veya resmi kurumla doğrulanacak aksiyon listesi üretir." action={<button className="button primary" onClick={onOpenSettings}>Bilgi / skill ekle →</button>} /><div className="life-hero panel"><div><div className="eyebrow">KİŞİSEL BAĞLAM</div><h3>Adres: Nieuwland 51, Broek in Waterland 1151 AZ</h3><p>Belediye odağı: Gemeente Waterland. Öncelikler: IND dosyası, 5 yıl oturum eşiği, hamilelik hakları, CJIB/vergi/mahkeme yazışmaları ve Berichtenbox kontrolü.</p></div><EvidencePill level="review" /></div><section className="panel life-calendar-panel"><div className="panel-head"><div><div className="eyebrow">TEK HAYAT TAKVİMİ</div><h3>Borç, ceza, IND, sağlık ve resmi süreler</h3></div><span className={`pill evidence-${calendarItems.length ? 'review' : 'verified'}`}>{calendarItems.length} açık kayıt</span></div><div className="life-timeline">{calendarItems.length ? calendarItems.map((item) => <div className="timeline-row" key={`${item.kind}-${item.title}-${item.date}`}><span>{item.kind}</span><strong>{item.title}</strong><small>{item.date} · {daysUntil(item.date) < 0 ? `${Math.abs(daysUntil(item.date))} gün geçti` : `${daysUntil(item.date)} gün kaldı`} · {item.meta}</small></div>) : <div className="empty-inline">Açık takvim kaydı yok.</div>}</div></section><div className="life-grid">{lifeRadarItems.map((item) => <article className="panel life-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.text}</p><small>{item.source}</small></article>)}</div><section className="panel berichtenbox-panel"><div className="panel-head"><div><div className="eyebrow">BERICHTENBOX İÇE ALMA</div><h3>DigiD otomasyonu yok; resmi mesajı güvenli şekilde kasaya al</h3></div><a className="button secondary" href="https://mijnoverheid.nl/" target="_blank" rel="noreferrer">MijnOverheid aç ↗</a></div><div className="step-list">{berichtenboxSteps.map((step, index) => <div className="step-row" key={step}><span>{index + 1}</span><p>{step}</p></div>)}</div></section><section className="panel preventive-panel"><div className="panel-head"><div><div className="eyebrow">ÖNLEYİCİ KONTROL LİSTESİ</div><h3>Yaşam kalitesini artıracak erken kontroller</h3></div><span className="pill evidence-review">{preventiveChecklist.length} başlık</span></div><div className="preventive-grid">{preventiveChecklist.map((item) => <article className="preventive-card" key={item.title}><div className="life-card-top"><span className="pill evidence-review">{item.tag}</span><a href={item.url} target="_blank" rel="noreferrer">Kaynak ↗</a></div><h3>{item.title}</h3><p>{item.action}</p><small>{item.source}</small></article>)}</div></section><section className="panel share-scope-panel"><div className="panel-head"><div><div className="eyebrow">PAYLAŞIM GÖRÜNÜMLERİ</div><h3>Avukat, eş ve muhasebe için kısıtlı kapsam</h3></div><EvidencePill level="review" /></div><div className="share-scope-grid">{shareScopes.map((scope) => <article className="share-scope-card" key={scope.audience}><strong>{scope.audience}</strong><p>{scope.detail}</p><span>Link üretmeden önce yeniden onay + audit gerekir.</span></article>)}</div></section><div className="overview-grid"><section className="panel"><div className="panel-head"><div><div className="eyebrow">CANLI UYARILAR</div><h3>Gmail/Drive/watchdog’ın yakaladığı riskler</h3></div><span className={`pill evidence-${live ? 'verified' : 'review'}`}>{notifications.length} kayıt</span></div><div className="notification-list">{notifications.length ? notifications.map((item) => <div className={`notification-row ${item.severity}`} key={item.id}><strong>{item.title}</strong><p>{item.body}</p><span>{new Date(item.createdAt).toLocaleString('tr-TR')}</span></div>) : <div className="empty-inline">{live ? 'Henüz canlı uyarı yok. Watchdog, Gmail ve Drive taramalarından sonra burada görünür.' : 'Canlı oturum yok; demo uyarı üretilmez.'}</div>}</div></section><section className="panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ</div><h3>Manuel kayıtlı bilgi / skill</h3></div><button className="text-button" onClick={onOpenSettings}>Ekle →</button></div><div className="knowledge-list">{knowledge.length ? knowledge.slice(0, 6).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p>{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Kaynak ↗</a>}</div>) : <div className="empty-inline">Henüz manuel bilgi yok. Ayarlar’dan “skill / yöntem / hak” ekleyebilirsin.</div>}</div></section></div><section className="panel safety-panel"><div className="panel-head"><div><div className="eyebrow">YETKİ SINIRI</div><h3>DigiD, BSN, ödeme ve resmi başvuru otomatikleşmez</h3></div><EvidencePill level="verified" /></div><p>Sistem sana kaynaklı kontrol listesi, belge paketi ve uyarı üretir. DigiD şifresi/BSN saklamaz; itiraz, ödeme, form gönderimi veya kurumla yazışma ancak ayrı ekranda metin ve kanıtı görüp sen onayladıktan sonra ilerler.</p></section></>
 }
 
 function ApprovalsView({ deadlines: deadlineItems, items, live, obligations: obligationItems, onApprove, onNavigate }: { deadlines: Deadline[]; items: ApprovalItem[]; live: boolean; obligations: Obligation[]; onApprove: (id: string) => void | Promise<void>; onNavigate: (view: ViewId) => void }) {
@@ -1166,7 +1380,7 @@ function ApprovalsView({ deadlines: deadlineItems, items, live, obligations: obl
 }
 
 function SourcesView({ sources: sourceItems }: { sources: SourceRecord[] }) {
-  return <><PageIntro eyebrow="KAYNAK KAYDI" title="Resmi kaynağı olmayan bilgi öneri değildir" detail="Ajan, Hollanda kurumları için allowlist kullanacak ve her çıkarımın kaynağını, tarihini ve geçerlilik durumunu gösterecek." action={<button className="button secondary">Kaynakları yenile (hazırlık)</button>} /><div className="source-grid">{sourceItems.map((source) => <div className="panel source-card" key={source.id}><div className="source-top"><span className="source-seal">◎</span><span className="pill official-pill">Resmi alan adı</span></div><h3>{source.name}</h3><a href={`https://${source.domain}`} target="_blank" rel="noreferrer">{source.domain} ↗</a><p>{source.purpose}</p><div className="source-footer"><span>{source.lastChecked}</span><span className="source-toggle"><span className={source.enabled ? 'toggle-on' : ''} /> {source.enabled ? 'İzleme açık' : 'Kapalı'}</span></div></div>)}</div></>
+  return <><PageIntro eyebrow="KAYNAK KAYDI" title="Resmi kaynağı olmayan bilgi öneri değildir" detail="Ajan, Hollanda kurumları için allowlist kullanacak ve her çıkarımın kaynağını, tarihini ve geçerlilik durumunu gösterecek." action={<button className="button secondary">Kaynakları yenile (hazırlık)</button>} /><section className="panel institution-panel"><div className="panel-head"><div><div className="eyebrow">KURUM PROFİLLERİ</div><h3>Ödeme, itiraz, taksit ve portal linkleri</h3></div><span className="pill evidence-verified">{institutionProfiles.length} profil</span></div><div className="institution-grid">{institutionProfiles.map((profile) => <article className="institution-card" key={profile.name}><div className="source-top"><span className="pill official-pill">Resmi işlem</span><strong>{profile.name}</strong></div><p>{profile.purpose}</p><small>{profile.risk}</small><div className="payment-links"><a href={profile.portalUrl} target="_blank" rel="noreferrer">Portal ↗</a><a href={profile.objectionUrl} target="_blank" rel="noreferrer">İtiraz/bilgi ↗</a><a href={profile.planUrl} target="_blank" rel="noreferrer">Taksit/iletişim ↗</a></div></article>)}</div></section><div className="source-grid">{sourceItems.map((source) => <div className="panel source-card" key={source.id}><div className="source-top"><span className="source-seal">◎</span><span className="pill official-pill">Resmi alan adı</span></div><h3>{source.name}</h3><a href={`https://${source.domain}`} target="_blank" rel="noreferrer">{source.domain} ↗</a><p>{source.purpose}</p><div className="source-footer"><span>{source.lastChecked}</span><span className="source-toggle"><span className={source.enabled ? 'toggle-on' : ''} /> {source.enabled ? 'İzleme açık' : 'Kapalı'}</span></div></div>)}</div></>
 }
 
 function SettingsView({ accounts, knowledge, live, onConnect, onNotice, onSaveKnowledge, onSignOut }: { accounts: MailAccount[]; knowledge: KnowledgeItem[]; live: boolean; onConnect: (includeDrive?: boolean) => void | Promise<void>; onNotice: (message: string) => void; onSaveKnowledge: (input: { body: string; category: string; sourceUrl?: string; title: string }) => Promise<boolean>; onSignOut: () => void | Promise<void> }) {
@@ -1195,6 +1409,14 @@ function SettingsView({ accounts, knowledge, live, onConnect, onNotice, onSaveKn
     onNotice(`${label} güvenlik nedeniyle buradan açılamaz. Önce kaynak, sonra Onay Merkezi ve audit gerekir.`)
   }
 
+  const applyLearningTemplate = (template: typeof learningTemplates[number]) => {
+    setKnowledgeCategory(template.category)
+    setKnowledgeTitle(template.title)
+    setKnowledgeBody(template.body)
+    setKnowledgeSource('')
+    onNotice('Öğrenme şablonu forma aktarıldı; kaydettiğinde bilgi bankasına yazılır.')
+  }
+
   const submitKnowledge = async (event: React.FormEvent) => {
     event.preventDefault()
     setSavingKnowledge(true)
@@ -1212,7 +1434,7 @@ function SettingsView({ accounts, knowledge, live, onConnect, onNotice, onSaveKn
     }
   }
 
-  return <><PageIntro eyebrow="AYARLAR VE BAĞLANTILAR" title="Yetkiyi küçük ve görünür tut" detail="Her Gmail/Drive hesabı ayrı bağlanır. Sistem hangi hesabı taradığını, hangi kapsamı aldığını ve son taramayı açıkça gösterir." action={<div className="action-pair"><button className="button primary" onClick={() => void onConnect(false)}>Gmail hesabı bağla</button><button className="button secondary" onClick={() => void onConnect(true)}>Gmail + Drive bağla</button></div>} /><section className="panel settings-section"><div className="panel-head"><div><div className="eyebrow">E-POSTA VE DRIVE HESAPLARI</div><h3>4-5 hesap için bağlantı durumu</h3></div><span className={`pill evidence-${connected ? 'verified' : 'review'}`}>{connected} / 5 bağlı</span></div><div className="accounts-list">{accounts.length ? accounts.map((account) => { const hasDrive = account.scopes.includes('https://www.googleapis.com/auth/drive.readonly'); return <div className="account-row" key={account.id}><span className="connection-icon gmail">G</span><div><strong>{account.email}</strong><span>{account.provider} · {account.lastSync ? `son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'son tarama yok'}</span></div><span className="scope-empty">{hasDrive ? 'Gmail + Drive' : account.scopes.length ? 'Gmail okuma' : 'Kapsam verilmedi'}</span><span className={`pill evidence-${account.status === 'connected' ? 'verified' : 'review'}`}>{account.status === 'connected' ? 'Bağlı' : 'Yeniden yetkilendir'}</span></div> }) : <div className="empty-inline">Henüz hesap bağlı değil. Her hesabı ayrı ayrı ekle.</div>}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">GÜVENLİK TERCİHLERİ</div><h3>Kalıcı kurallar</h3><SettingSwitch title="Otomatik ödeme" detail="Daima kapalı; yalnızca onaylı taslak ve yeniden doğrulama" enabled={false} locked onToggle={() => lockedPreference('Otomatik ödeme')} /><SettingSwitch title="DigiD otomasyonu" detail="Kimlik bilgisi saklanmaz, manuel giriş gerekir" enabled={false} locked onToggle={() => lockedPreference('DigiD otomasyonu')} /><SettingSwitch title="Hassas veri maskeleme" detail="Loglarda ve hata mesajlarında açık kalır" enabled locked onToggle={() => lockedPreference('Hassas veri maskeleme')} /><SettingSwitch title="Resmi işlem gönderimi" detail="Avukat/kullanıcı onayı olmadan yok" enabled={false} locked onToggle={() => lockedPreference('Resmi işlem gönderimi')} /></section><section className="panel"><div className="eyebrow">ÇALIŞMA TERCİHLERİ</div><h3>Okuma ve uyarı davranışı</h3><SettingSwitch title="Drive OCR sonrası borç/süre çıkar" detail="Okunan belgeden ödeme, itiraz ve son tarih üret" enabled={uiPreferences.driveOcr} onToggle={() => togglePreference('driveOcr', 'Drive OCR çıkarımı')} /><SettingSwitch title="2 gün önce takvim alarmı" detail="İndirilen .ics ve Google Takvim linkleri alarm bilgisi taşır" enabled={uiPreferences.calendarAlarms} onToggle={() => togglePreference('calendarAlarms', 'Takvim alarmı')} /><SettingSwitch title="Radar uyarılarını göster" detail="Gmail/Drive/watchdog sinyallerini Yaşam Radar’da göster" enabled={uiPreferences.radarWarnings} onToggle={() => togglePreference('radarWarnings', 'Radar uyarıları')} /><SettingSwitch title="Evrak detayını açık tut" detail="Kasa listesinde seçili belgenin özetini ve alanlarını yanında göster" enabled={uiPreferences.autoOpenDocument} onToggle={() => togglePreference('autoOpenDocument', 'Evrak detayı')} /><p className="setting-copy">Bu kontroller şimdilik dashboard davranışını görünür yapar. Kritik server politikaları ayrıca korunur.</p></section></div><div className="settings-two-col"><section className="panel"><div className="eyebrow">VERİ HAKLARI</div><h3>Kontrol sende</h3><p className="setting-copy">Veriyi dışa aktarma, bağlantıyı iptal etme ve tüm veriyi silme işlemleri ayrı, geri dönüşü açık adımlar olacak.</p><button className="button ghost" onClick={() => onNotice('Veri politikası uygulama öncesi hukuk ve güvenlik incelemesinde.')}>Veri politikası taslağı</button>{live && <button className="button secondary signout-button" onClick={() => void onSignOut()}>Bu oturumu kapat</button>}</section><section className="panel"><div className="eyebrow">TAKVİM HEDEFİ</div><h3>siostarr@hairartclinics.com</h3><p className="setting-copy">Ödeme ve süre kartlarındaki Google Takvim linkleri bu hesapla açılacak şekilde hazırlanır. Dosya dışa aktarımı ayrıca 2 gün önce alarm içerir.</p><a className="button secondary" href="https://calendar.google.com/calendar/u/0/r?authuser=siostarr@hairartclinics.com" target="_blank" rel="noreferrer">Google Takvim’i aç ↗</a></section></div><section className="panel knowledge-panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ / MANUEL SKILL</div><h3>Yeni bilgi, yöntem veya kontrol kuralı ekle</h3></div><span className="pill evidence-review">{knowledge.length} kayıt</span></div><form className="knowledge-form" onSubmit={submitKnowledge}><label htmlFor="knowledge-category">Kategori</label><select id="knowledge-category" value={knowledgeCategory} onChange={(event) => setKnowledgeCategory(event.target.value as KnowledgeItem['category'])}>{Object.entries(knowledgeCategoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label htmlFor="knowledge-title">Başlık</label><input id="knowledge-title" required minLength={3} maxLength={160} value={knowledgeTitle} onChange={(event) => setKnowledgeTitle(event.target.value)} placeholder="Örn. CJIB itirazında önce ödeme yapma kontrolü" /><label htmlFor="knowledge-body">Bilgi / skill</label><textarea id="knowledge-body" required minLength={10} maxLength={5000} value={knowledgeBody} onChange={(event) => setKnowledgeBody(event.target.value)} placeholder="Kaynak, koşul, ne zaman uygulanır ve hangi kanıt gerekir?" /><label htmlFor="knowledge-source">Kaynak URL (opsiyonel)</label><input id="knowledge-source" type="url" maxLength={2048} value={knowledgeSource} onChange={(event) => setKnowledgeSource(event.target.value)} placeholder="https://..." /><button className="button primary" disabled={savingKnowledge}>{savingKnowledge ? 'Kaydediliyor…' : 'Bilgi bankasına kaydet'}</button></form>{knowledge.length > 0 && <div className="knowledge-preview">{knowledge.slice(0, 3).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p></div>)}</div>}</section>{live && <PasswordPanel onNotice={onNotice} />}</>
+  return <><PageIntro eyebrow="AYARLAR VE BAĞLANTILAR" title="Yetkiyi küçük ve görünür tut" detail="Her Gmail/Drive hesabı ayrı bağlanır. Sistem hangi hesabı taradığını, hangi kapsamı aldığını ve son taramayı açıkça gösterir." action={<div className="action-pair"><button className="button primary" onClick={() => void onConnect(false)}>Gmail hesabı bağla</button><button className="button secondary" onClick={() => void onConnect(true)}>Gmail + Drive bağla</button></div>} /><section className="panel settings-section"><div className="panel-head"><div><div className="eyebrow">E-POSTA VE DRIVE HESAPLARI</div><h3>4-5 hesap için bağlantı durumu</h3></div><span className={`pill evidence-${connected ? 'verified' : 'review'}`}>{connected} / 5 bağlı</span></div><div className="accounts-list">{accounts.length ? accounts.map((account) => { const hasDrive = account.scopes.includes('https://www.googleapis.com/auth/drive.readonly'); return <div className="account-row" key={account.id}><span className="connection-icon gmail">G</span><div><strong>{account.email}</strong><span>{account.provider} · {account.lastSync ? `son tarama ${new Date(account.lastSync).toLocaleString('tr-TR')}` : 'son tarama yok'}</span></div><span className="scope-empty">{hasDrive ? 'Gmail + Drive' : account.scopes.length ? 'Gmail okuma' : 'Kapsam verilmedi'}</span><span className={`pill evidence-${account.status === 'connected' ? 'verified' : 'review'}`}>{account.status === 'connected' ? 'Bağlı' : 'Yeniden yetkilendir'}</span></div> }) : <div className="empty-inline">Henüz hesap bağlı değil. Her hesabı ayrı ayrı ekle.</div>}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">GÜVENLİK TERCİHLERİ</div><h3>Kalıcı kurallar</h3><SettingSwitch title="Otomatik ödeme" detail="Daima kapalı; yalnızca onaylı taslak ve yeniden doğrulama" enabled={false} locked onToggle={() => lockedPreference('Otomatik ödeme')} /><SettingSwitch title="DigiD otomasyonu" detail="Kimlik bilgisi saklanmaz, manuel giriş gerekir" enabled={false} locked onToggle={() => lockedPreference('DigiD otomasyonu')} /><SettingSwitch title="Hassas veri maskeleme" detail="Loglarda ve hata mesajlarında açık kalır" enabled locked onToggle={() => lockedPreference('Hassas veri maskeleme')} /><SettingSwitch title="Resmi işlem gönderimi" detail="Avukat/kullanıcı onayı olmadan yok" enabled={false} locked onToggle={() => lockedPreference('Resmi işlem gönderimi')} /></section><section className="panel"><div className="eyebrow">ÇALIŞMA TERCİHLERİ</div><h3>Okuma ve uyarı davranışı</h3><SettingSwitch title="Drive OCR sonrası borç/süre çıkar" detail="Okunan belgeden ödeme, itiraz ve son tarih üret" enabled={uiPreferences.driveOcr} onToggle={() => togglePreference('driveOcr', 'Drive OCR çıkarımı')} /><SettingSwitch title="2 gün önce takvim alarmı" detail="İndirilen .ics ve Google Takvim linkleri alarm bilgisi taşır" enabled={uiPreferences.calendarAlarms} onToggle={() => togglePreference('calendarAlarms', 'Takvim alarmı')} /><SettingSwitch title="Radar uyarılarını göster" detail="Gmail/Drive/watchdog sinyallerini Yaşam Radar’da göster" enabled={uiPreferences.radarWarnings} onToggle={() => togglePreference('radarWarnings', 'Radar uyarıları')} /><SettingSwitch title="Evrak detayını açık tut" detail="Kasa listesinde seçili belgenin özetini ve alanlarını yanında göster" enabled={uiPreferences.autoOpenDocument} onToggle={() => togglePreference('autoOpenDocument', 'Evrak detayı')} /><p className="setting-copy">Bu kontroller şimdilik dashboard davranışını görünür yapar. Kritik server politikaları ayrıca korunur.</p></section></div><section className="panel rule-panel"><div className="panel-head"><div><div className="eyebrow">AI MAIL KURALLARI</div><h3>Gmail/Drive sinyalini nasıl sınıflandıracak?</h3></div><span className="pill evidence-review">{emailAutomationRules.length} kural</span></div><div className="rule-grid">{emailAutomationRules.map((rule) => <article className="rule-card" key={rule.match}><strong>{rule.match}</strong><p>{rule.action}</p></article>)}</div></section><div className="settings-two-col"><section className="panel"><div className="eyebrow">VERİ HAKLARI</div><h3>Kontrol sende</h3><p className="setting-copy">Veriyi dışa aktarma, bağlantıyı iptal etme ve tüm veriyi silme işlemleri ayrı, geri dönüşü açık adımlar olacak.</p><button className="button ghost" onClick={() => onNotice('Veri politikası uygulama öncesi hukuk ve güvenlik incelemesinde.')}>Veri politikası taslağı</button>{live && <button className="button secondary signout-button" onClick={() => void onSignOut()}>Bu oturumu kapat</button>}</section><section className="panel"><div className="eyebrow">TAKVİM HEDEFİ</div><h3>siostarr@hairartclinics.com</h3><p className="setting-copy">Ödeme ve süre kartlarındaki Google Takvim linkleri bu hesapla açılacak şekilde hazırlanır. Dosya dışa aktarımı ayrıca 2 gün önce alarm içerir.</p><a className="button secondary" href="https://calendar.google.com/calendar/u/0/r?authuser=siostarr@hairartclinics.com" target="_blank" rel="noreferrer">Google Takvim’i aç ↗</a></section></div><section className="panel knowledge-panel"><div className="panel-head"><div><div className="eyebrow">AJAN BEYNİ / MANUEL SKILL</div><h3>Düzeltmeden öğrenen bilgi bankası</h3></div><span className="pill evidence-review">{knowledge.length} kayıt</span></div><div className="learning-template-grid">{learningTemplates.map((template) => <button className="learning-template-card" key={template.title} onClick={() => applyLearningTemplate(template)}><strong>{template.title}</strong><span>{knowledgeCategoryLabel[template.category]}</span></button>)}</div><form className="knowledge-form" onSubmit={submitKnowledge}><label htmlFor="knowledge-category">Kategori</label><select id="knowledge-category" value={knowledgeCategory} onChange={(event) => setKnowledgeCategory(event.target.value as KnowledgeItem['category'])}>{Object.entries(knowledgeCategoryLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><label htmlFor="knowledge-title">Başlık</label><input id="knowledge-title" required minLength={3} maxLength={160} value={knowledgeTitle} onChange={(event) => setKnowledgeTitle(event.target.value)} placeholder="Örn. CJIB itirazında önce ödeme yapma kontrolü" /><label htmlFor="knowledge-body">Bilgi / skill</label><textarea id="knowledge-body" required minLength={10} maxLength={5000} value={knowledgeBody} onChange={(event) => setKnowledgeBody(event.target.value)} placeholder="Kaynak, koşul, ne zaman uygulanır ve hangi kanıt gerekir?" /><label htmlFor="knowledge-source">Kaynak URL (opsiyonel)</label><input id="knowledge-source" type="url" maxLength={2048} value={knowledgeSource} onChange={(event) => setKnowledgeSource(event.target.value)} placeholder="https://..." /><button className="button primary" disabled={savingKnowledge}>{savingKnowledge ? 'Kaydediliyor…' : 'Bilgi bankasına kaydet'}</button></form>{knowledge.length > 0 && <div className="knowledge-preview">{knowledge.slice(0, 3).map((item) => <div className="knowledge-row" key={item.id}><span className="pill evidence-review">{knowledgeCategoryLabel[item.category]}</span><strong>{item.title}</strong><p>{item.body}</p></div>)}</div>}</section>{live && <PasswordPanel onNotice={onNotice} />}</>
 }
 
 function SettingSwitch({ detail, enabled, locked = false, onToggle, title }: { detail: string; enabled: boolean; locked?: boolean; onToggle: () => void; title: string }) {
