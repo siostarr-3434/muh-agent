@@ -146,11 +146,13 @@ async function dashboard(request, response, config) {
   if (!context) return true
   const userId = context.user.id
 
-  const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult] = await Promise.all([
+  const [obligationsResult, deadlinesResult, approvalsResult, accountsResult, calendarConnectionsResult, calendarEventLinksResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult] = await Promise.all([
     context.client.from('obligations').select('id,authority,title,category,amount,currency,due_date,status,evidence_level,source_url,note,payment_guidance').eq('user_id', userId).order('due_date', { ascending: true }),
     context.client.from('deadlines').select('id,title,owner,due_at,status,evidence_level,source_url').eq('user_id', userId).order('due_at', { ascending: true }),
     context.client.from('approvals').select('id,action_type,risk,payload,status,expires_at,created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(100),
     context.client.from('email_accounts').select('id,provider,email,label,status,scopes,last_sync_at,last_error_code').eq('user_id', userId).order('created_at', { ascending: true }),
+    context.client.from('calendar_connections').select('account_id,calendar_id,auto_sync,reminder_minutes,status,last_sync_at,last_error_code').eq('user_id', userId).order('created_at', { ascending: true }),
+    context.client.from('calendar_event_links').select('account_id,source_type,source_id,provider_event_id,event_url,status,last_synced_at,last_error_code').eq('user_id', userId).order('last_synced_at', { ascending: false }).limit(250),
     context.client.from('email_messages').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('documents').select('id', { count: 'exact', head: true }).eq('user_id', userId),
     context.client.from('provider_files').select('id', { count: 'exact', head: true }).eq('user_id', userId),
@@ -162,7 +164,7 @@ async function dashboard(request, response, config) {
     context.client.from('knowledge_items').select('id,category,title,body,source_url,evidence_level,created_at').eq('user_id', userId).eq('status', 'active').order('created_at', { ascending: false }).limit(100),
   ])
 
-  const failed = [obligationsResult, deadlinesResult, approvalsResult, accountsResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult].some((result) => result.error)
+  const failed = [obligationsResult, deadlinesResult, approvalsResult, accountsResult, calendarConnectionsResult, calendarEventLinksResult, messagesCountResult, documentsResult, filesCountResult, filesResult, messagesResult, notificationsResult, sourcesResult, sourceSnapshotsResult, knowledgeResult].some((result) => result.error)
   if (failed) {
     console.error('dashboard_query_failed')
     writeJson(response, 502, { error: 'dashboard_unavailable' }, context.state)
@@ -183,6 +185,8 @@ async function dashboard(request, response, config) {
   writeJson(response, 200, {
     accounts,
     approvals: (approvalsResult.data ?? []).map(normalizeApproval),
+    calendarConnections: calendarConnectionsResult.data ?? [],
+    calendarEventLinks: calendarEventLinksResult.data ?? [],
     counts: { documents: (documentsResult.count ?? 0) + visibleFiles.length, messages: messagesCountResult.count ?? 0 },
     deadlines: (deadlinesResult.data ?? []).map((row) => enrichSourceLinkedRow(row, sourceIndex)),
     files: visibleFiles.map((file) => ({
@@ -482,6 +486,104 @@ async function gmailConnect(request, response, config) {
   return true
 }
 
+async function calendarConnect(request, response, config) {
+  const state = createResponseState()
+  if (!method(request, response, ['POST'], state)) return true
+  if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
+  if (!withinRateLimit(request, 'calendar-connect')) {
+    writeJson(response, 429, { error: 'rate_limited' }, state, { 'Retry-After': '60' })
+    return true
+  }
+  const body = await readJson(request)
+  if (typeof body?.accountId !== 'string' || !uuidPattern.test(body.accountId)) {
+    writeJson(response, 400, { error: 'invalid_calendar_account' }, state)
+    return true
+  }
+  const context = await authenticated(request, response, config)
+  if (!context) return true
+  const { data, error } = await context.client.functions.invoke('gmail-oauth-start', {
+    body: { accountId: body.accountId, includeCalendar: true },
+    headers: { Origin: config.appOrigin },
+  })
+  if (error || typeof data?.authorizationUrl !== 'string') {
+    const edgeError = error ? await invokedFunctionErrorCode(error) : null
+    const allowed = new Set(['invalid_calendar_account', 'invalid_calendar_target', 'oauth_not_configured', 'oauth_start_failed', 'rate_limited'])
+    const code = edgeError && allowed.has(edgeError) ? edgeError : 'calendar_connect_failed'
+    console.error('calendar_connect_failed')
+    const status = code === 'invalid_calendar_account' ? 400 : code === 'invalid_calendar_target' ? 409 : code === 'rate_limited' ? 429 : code === 'oauth_not_configured' ? 503 : 502
+    writeJson(response, status, { error: code }, context.state)
+    return true
+  }
+  let authorizationUrl
+  try {
+    authorizationUrl = new URL(data.authorizationUrl)
+  } catch {
+    writeJson(response, 502, { error: 'invalid_oauth_destination' }, context.state)
+    return true
+  }
+  if (authorizationUrl.protocol !== 'https:' || authorizationUrl.hostname !== 'accounts.google.com') {
+    writeJson(response, 502, { error: 'invalid_oauth_destination' }, context.state)
+    return true
+  }
+  writeJson(response, 200, { authorizationUrl: authorizationUrl.toString() }, context.state)
+  return true
+}
+
+async function calendarSync(request, response, config) {
+  const state = createResponseState()
+  if (!method(request, response, ['POST'], state)) return true
+  if (!liveOnly(response, config, state) || !sameOriginOnly(request, response, config, state)) return true
+  if (!withinRateLimit(request, 'calendar-sync', 12, 60_000)) {
+    writeJson(response, 429, { error: 'calendar_rate_limited' }, state, { 'Retry-After': '60' })
+    return true
+  }
+  const body = await readJson(request)
+  const accountId = typeof body?.accountId === 'string' ? body.accountId : ''
+  const sourceType = body?.sourceType
+  const sourceId = body?.sourceId
+  const hasSource = sourceType !== undefined || sourceId !== undefined
+  if (!uuidPattern.test(accountId) || (hasSource && (!['obligation', 'deadline'].includes(sourceType) || typeof sourceId !== 'string' || !uuidPattern.test(sourceId)))) {
+    writeJson(response, 400, { error: hasSource ? 'invalid_calendar_source' : 'invalid_calendar_account' }, state)
+    return true
+  }
+
+  const context = await authenticated(request, response, config)
+  if (!context) return true
+  const { data, error } = await context.client.functions.invoke('calendar-sync', {
+    body: { accountId, force: true, ...(hasSource ? { sourceId, sourceType } : {}) },
+    headers: { Origin: config.appOrigin },
+  })
+  if (error) {
+    const edgeError = await invokedFunctionErrorCode(error)
+    const allowed = new Set([
+      'calendar_api_not_enabled',
+      'calendar_connection_missing',
+      'calendar_date_missing',
+      'calendar_oauth_client_invalid',
+      'calendar_rate_limited',
+      'calendar_reauthorization_required',
+      'calendar_source_inactive',
+      'calendar_source_not_found',
+      'calendar_sync_in_progress',
+      'calendar_target_account_invalid',
+      'calendar_token_temporarily_unavailable',
+      'calendar_write_forbidden',
+    ])
+    const code = edgeError && allowed.has(edgeError) ? edgeError : 'calendar_sync_failed'
+    const status = code === 'calendar_date_missing' ? 400
+      : code === 'calendar_source_not_found' ? 404
+        : code === 'calendar_rate_limited' ? 429
+          : code === 'calendar_api_not_enabled' || code === 'calendar_oauth_client_invalid' || code === 'calendar_token_temporarily_unavailable' ? 503
+            : code === 'calendar_connection_missing' || code === 'calendar_reauthorization_required' || code === 'calendar_source_inactive' || code === 'calendar_sync_in_progress' || code === 'calendar_target_account_invalid' || code === 'calendar_write_forbidden' ? 409
+              : 502
+    console.error('calendar_sync_failed')
+    writeJson(response, status, { error: code }, context.state)
+    return true
+  }
+  writeJson(response, 200, data, context.state)
+  return true
+}
+
 export async function handleApplicationRoute(request, response, config, path) {
   try {
     if (path === '/api/session') return await session(request, response, config)
@@ -492,6 +594,8 @@ export async function handleApplicationRoute(request, response, config, path) {
     if (path === '/api/dashboard') return await dashboard(request, response, config)
     if (path === '/api/documents/extract') return await extractDocuments(request, response, config)
     if (path === '/api/gmail/connect') return await gmailConnect(request, response, config)
+    if (path === '/api/calendar/connect') return await calendarConnect(request, response, config)
+    if (path === '/api/calendar/sync') return await calendarSync(request, response, config)
     if (path === '/api/knowledge') return await createKnowledge(request, response, config)
     if (path === '/auth/callback') return await authCallback(request, response, config)
     const approvalMatch = path.match(/^\/api\/approvals\/([^/]+)\/decision$/)

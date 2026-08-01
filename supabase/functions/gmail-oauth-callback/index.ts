@@ -3,7 +3,9 @@ import { encryptSecret, sha256Hex, validateEncryptionKey } from '../_shared/cryp
 
 type OAuthCallbackFailureCode =
   | 'account_save_failed'
+  | 'calendar_connection_save_failed'
   | 'google_access_token_missing'
+  | 'google_account_mismatch'
   | 'google_client_invalid'
   | 'google_code_invalid'
   | 'google_email_unverified'
@@ -56,11 +58,11 @@ function callbackFailureCode(error: unknown): OAuthCallbackFailureCode {
   return 'unexpected'
 }
 
-function resultRedirect(status: string, errorCode?: OAuthCallbackFailureCode) {
+function resultRedirect(status: string, errorCode?: OAuthCallbackFailureCode, calendar = false) {
   const url = new URL('/', env('PUBLIC_APP_ORIGIN'))
   url.searchParams.set('view', 'settings')
-  url.searchParams.set('gmail', status)
-  if (errorCode) url.searchParams.set('gmail_error', errorCode)
+  url.searchParams.set(calendar ? 'calendar' : 'gmail', status)
+  if (errorCode) url.searchParams.set(calendar ? 'calendar_error' : 'gmail_error', errorCode)
   return Response.redirect(url.toString(), 303)
 }
 
@@ -109,8 +111,9 @@ Deno.serve(async (request) => {
   const requestUrl = new URL(request.url)
   const state = requestUrl.searchParams.get('state')
   const code = requestUrl.searchParams.get('code')
-  if (!state || !code || requestUrl.searchParams.has('error')) return resultRedirect('cancelled')
+  if (!state) return resultRedirect('cancelled')
 
+  let calendarRequested = false
   try {
     const oauth = oauthConfig()
     const admin = adminClient()
@@ -130,10 +133,12 @@ Deno.serve(async (request) => {
       .eq('id', candidate.id)
       .is('consumed_at', null)
       .gt('expires_at', consumedAt)
-      .select('id,user_id,scopes,redirect_uri,expires_at,consumed_at')
+      .select('id,user_id,account_id,scopes,redirect_uri,expires_at,consumed_at')
       .single()
     if (consumeError) throw failure('state_consume_failed')
     if (!oauthState) return resultRedirect('expired')
+    calendarRequested = oauthState.scopes.some((scope: string) => scope === 'https://www.googleapis.com/auth/calendar.events' || scope === 'https://www.googleapis.com/auth/calendar.events.owned')
+    if (!code || requestUrl.searchParams.has('error')) return resultRedirect('cancelled', undefined, calendarRequested)
 
     const tokens = await exchangeCode(code, oauthState.redirect_uri, oauth)
     if (!tokens.access_token) throw failure('google_access_token_missing')
@@ -144,20 +149,44 @@ Deno.serve(async (request) => {
     if (!tokens.refresh_token) throw failure('google_refresh_token_missing')
 
     const email = await googleEmail(tokens.access_token)
+    if (calendarRequested) {
+      if (!oauthState.account_id) throw failure('calendar_connection_save_failed')
+      const { data: expectedAccount, error: expectedAccountError } = await admin.from('email_accounts')
+        .select('email')
+        .eq('id', oauthState.account_id)
+        .eq('user_id', oauthState.user_id)
+        .eq('provider', 'gmail')
+        .maybeSingle()
+      if (expectedAccountError || !expectedAccount) throw failure('calendar_connection_save_failed')
+      if (expectedAccount.email.toLowerCase() !== email) throw failure('google_account_mismatch')
+    }
+    const { data: existingAccount, error: existingAccountError } = await admin.from('email_accounts')
+      .select('scopes')
+      .eq('user_id', oauthState.user_id)
+      .eq('provider', 'gmail')
+      .eq('email', email)
+      .maybeSingle()
+    if (existingAccountError) throw failure('account_save_failed')
+    const persistedScopes = [...new Set([
+      ...oauthState.scopes,
+      ...(Array.isArray(existingAccount?.scopes) ? existingAccount.scopes.filter((scope: unknown) => typeof scope === 'string') : []),
+    ])]
     const ciphertext = await encryptSecret(tokens.refresh_token, oauth.tokenEncryptionKey)
-    const { error: connectError } = await admin.rpc('connect_gmail_account', {
+    const { data: connectedAccountId, error: connectError } = await admin.rpc('connect_google_account', {
+      p_calendar_account_id: calendarRequested ? oauthState.account_id : null,
       p_user_id: oauthState.user_id,
       p_email: email,
-      p_scopes: oauthState.scopes,
+      p_scopes: persistedScopes,
       p_refresh_token_ciphertext: ciphertext,
     })
-    if (connectError) throw failure('account_save_failed')
+    if (connectError) throw failure(calendarRequested ? 'calendar_connection_save_failed' : 'account_save_failed')
+    if (calendarRequested && connectedAccountId !== oauthState.account_id) throw failure('google_account_mismatch')
 
     console.log('gmail_oauth_callback_connected')
-    return resultRedirect('connected')
+    return resultRedirect('connected', undefined, calendarRequested)
   } catch (error) {
     const code = callbackFailureCode(error)
     console.error(JSON.stringify({ event: 'gmail_oauth_callback_failed', code }))
-    return resultRedirect('failed', code)
+    return resultRedirect('failed', code, calendarRequested)
   }
 })

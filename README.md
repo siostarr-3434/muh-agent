@@ -10,12 +10,13 @@ Muh Agent; para yükümlülüklerini, resmi yazışmaları, son tarihleri ve has
 - Demo ile canlı veriyi açıkça ayıran çalışma modu.
 - Supabase PKCE girişi; tarayıcı JavaScript'ine açılmayan HttpOnly, `SameSite=Lax`, host-only oturum çerezleri.
 - Kullanıcı başına RLS, en az yetki grant'leri, atomik karar/audit ve Gmail token/audit işlemleri.
-- Salt-okunur Gmail OAuth başlangıç/callback/senkronizasyon Edge Function'ları.
+- Salt-okunur Gmail/Drive OAuth ve doğrudan Google Calendar etkinlik eşitlemesi.
+- Doğrulanmış ödeme ve süreleri `primary` takvime idempotent ekleyen, 2 gün önce hatırlatan managed worker.
 - Onayın dış eylemi yürütmediği ayrı karar katmanı.
 - Birim, güvenlik ve gerçek Chrome masaüstü/mobil E2E testleri.
 - Non-root, çok aşamalı Docker imajı ve GitHub Actions kalite kapıları.
 
-Ayrı Supabase staging projesinde şema ve dört Edge Function yayınlandı; yetkisiz erişim smoke testleri geçti. Üretim hosting/alan adı, Google OAuth sırları, gerçek Gmail kabul testi, 24/7 scheduler, OCR ve banka bağlantısı henüz canlı değildir. DigiD otomasyonu ve otomatik ödeme ürün sınırı dışında kalır. Arayüz bu eksikleri canlıymış gibi göstermez.
+Ayrı Supabase projesinde şema, RLS, Gmail/Drive/OCR worker'ları ve Google Calendar worker'ı yayınlandı; Calendar API etkin ve yetkisiz erişim smoke testi geçmiştir. Takvim bağlantısı kullanıcı başına Google izin ekranında tamamlanır; bu onay verilmeden hiçbir takvim kaydı oluşturulmaz. Banka bağlantısı, DigiD otomasyonu ve otomatik ödeme ürün sınırı dışında kalır. Arayüz bu sınırları canlıymış gibi göstermez.
 
 ## Yerel çalıştırma
 

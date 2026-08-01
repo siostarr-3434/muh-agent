@@ -3,6 +3,8 @@ import { expect, test, type Page } from '@playwright/test'
 const emptyDashboard = {
   accounts: [],
   approvals: [],
+  calendarConnections: [],
+  calendarEventLinks: [],
   counts: { documents: 0, messages: 0 },
   deadlines: [],
   files: [],
@@ -14,7 +16,7 @@ const emptyDashboard = {
   sources: [],
 }
 
-async function mockSession(page: Page, authenticated: boolean) {
+async function mockSession(page: Page, authenticated: boolean, dashboard: Record<string, unknown> = emptyDashboard) {
   await page.route('**/api/session', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -29,7 +31,7 @@ async function mockSession(page: Page, authenticated: boolean) {
     await page.route('**/api/dashboard', (route) => route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(emptyDashboard),
+      body: JSON.stringify(dashboard),
     }))
   }
 }
@@ -158,6 +160,79 @@ test('requests Drive scope only after the explicit Drive connect click', async (
   ])
 
   expect(connectBody).toEqual({ includeDrive: true })
+})
+
+test('starts incremental Google Calendar authorization for the preferred Gmail account', async ({ page }) => {
+  const accountId = '11111111-1111-4111-8111-111111111111'
+  let connectBody: { accountId?: string } | undefined
+  await mockSession(page, true, {
+    ...emptyDashboard,
+    accounts: [{ email: 'siostarr@hairartclinics.com', id: accountId, last_sync_at: null, provider: 'gmail', scopes: [], status: 'connected' }],
+  })
+  await page.route('**/api/calendar/connect', async (route) => {
+    connectBody = route.request().postDataJSON() as { accountId?: string }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test-calendar' }) })
+  })
+  await page.route('https://accounts.google.com/**', (route) => route.fulfill({ status: 200, body: 'ok' }))
+
+  await page.goto('/')
+  await page.getByTestId('nav-payments').click()
+  await expect(page.getByText('Takvim hedefi: siostarr@hairartclinics.com')).toBeVisible()
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes('/api/calendar/connect') && request.method() === 'POST'),
+    page.getByTestId('calendar-connect').click(),
+  ])
+
+  expect(connectBody).toEqual({ accountId })
+})
+
+test('never falls back to a different Gmail account for Calendar', async ({ page }) => {
+  let connectRequests = 0
+  await mockSession(page, true, {
+    ...emptyDashboard,
+    accounts: [{ email: 'other@example.com', id: '33333333-3333-4333-8333-333333333333', last_sync_at: null, provider: 'gmail', scopes: [], status: 'connected' }],
+  })
+  await page.route('**/api/calendar/connect', (route) => {
+    connectRequests += 1
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ authorizationUrl: 'https://accounts.google.com/' }) })
+  })
+
+  await page.goto('/')
+  await page.getByTestId('nav-payments').click()
+  await page.getByTestId('calendar-connect').click()
+
+  await expect(page.getByRole('status')).toContainText('Takvim hedefi siostarr@hairartclinics.com')
+  expect(connectRequests).toBe(0)
+})
+
+test('creates a real Calendar event request for one payment record', async ({ page }) => {
+  const accountId = '11111111-1111-4111-8111-111111111111'
+  const obligationId = '22222222-2222-4222-8222-222222222222'
+  let syncBody: { accountId?: string; sourceId?: string; sourceType?: string } | undefined
+  await mockSession(page, true, {
+    ...emptyDashboard,
+    accounts: [{ email: 'siostarr@hairartclinics.com', id: accountId, last_sync_at: null, provider: 'gmail', scopes: ['https://www.googleapis.com/auth/calendar.events.owned'], status: 'connected' }],
+    calendarConnections: [{ account_id: accountId, auto_sync: true, calendar_id: 'primary', last_error_code: null, last_sync_at: null, reminder_minutes: 2880, status: 'connected' }],
+    obligations: [{ amount: 150.75, authority: 'Gemeente Den Haag', category: 'fine', currency: 'EUR', due_date: '2026-08-10', evidence_level: 'verified', id: obligationId, note: 'Parkeerbelasting', payment_guidance: null, source_url: null, status: 'open', title: 'Parkeerbelasting' }],
+  })
+  await page.route('**/api/calendar/sync', async (route) => {
+    syncBody = route.request().postDataJSON() as { accountId?: string; sourceId?: string; sourceType?: string }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ artifacts: [], completedAt: '2026-08-01T09:00:00.000Z', status: 'success', summary: '1 etkinlik oluşturuldu', totals: { created: 1, deleted: 0, failed: 0, skipped: 0, updated: 0 } }),
+    })
+  })
+
+  await page.goto('/')
+  await page.getByTestId('nav-payments').click()
+  await Promise.all([
+    page.waitForRequest((request) => request.url().includes('/api/calendar/sync') && request.method() === 'POST'),
+    page.getByTestId(`calendar-add-obligation-${obligationId}`).click(),
+  ])
+
+  expect(syncBody).toEqual({ accountId, sourceId: obligationId, sourceType: 'obligation' })
+  await expect(page.getByRole('status')).toContainText('Google Takvim eşitlendi')
 })
 
 test('saves a manual knowledge item from settings', async ({ page }) => {

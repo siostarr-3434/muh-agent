@@ -15,6 +15,9 @@ verify_jwt = false
 [functions.document-extract]
 verify_jwt = false
 
+[functions.calendar-sync]
+verify_jwt = false
+
 [functions.life-watchdog]
 verify_jwt = false
 

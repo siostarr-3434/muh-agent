@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ApiError, beginGmailConnection, createKnowledgeItem, decideApproval, extractDocuments, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, type DashboardResponse, type SessionResponse } from './api'
+import { ApiError, beginCalendarConnection, beginGmailConnection, createKnowledgeItem, decideApproval, extractDocuments, getDashboard, getSession, requestPasswordRecovery, setPassword, signIn, signOut, syncCalendarEvents, type DashboardResponse, type SessionResponse } from './api'
 import { activities, approvals as initialApprovals, deadlines, mailAccounts, obligations, sources } from './data'
-import type { ApprovalItem, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, PaymentGuidance, ProviderFile, SourceRecord, ViewId } from './types'
+import type { ApprovalItem, CalendarConnection, CalendarEventLink, DashboardMessage, Deadline, EvidenceLevel, KnowledgeItem, MailAccount, NotificationItem, Obligation, ObligationStatus, PaymentGuidance, ProviderFile, SourceRecord, ViewId } from './types'
 
 const nav: Array<{ id: ViewId; label: string; icon: string }> = [
   { id: 'overview', label: 'Genel Bakış', icon: '⌂' },
@@ -347,6 +347,15 @@ function initialNotice() {
   const query = new URLSearchParams(window.location.search)
   if (query.get('password') === 'recovery') return 'Şifre belirleme oturumu açıldı. Ayarlar bölümünden yeni şifreni kaydet.'
   if (query.get('password') === 'recovery_failed') return 'Şifre belirleme bağlantısı doğrulanamadı. Yeni bağlantı iste.'
+  if (query.get('calendar') === 'connected') return 'Google Takvim bağlandı. Doğrulanmış ödeme ve süreler iki gün önce hatırlatılacak.'
+  if (query.get('calendar') === 'cancelled') return 'Google Takvim izin ekranı kapatıldı; mevcut Gmail ve Takvim kayıtları değişmedi.'
+  if (query.get('calendar') === 'failed') {
+    const error = query.get('calendar_error')
+    if (error === 'google_account_mismatch') return 'Google izin ekranında seçilen hesap, bağlamak istediğiniz Gmail hesabıyla eşleşmedi. Doğru hesabı seçerek yeniden deneyin.'
+    if (error === 'google_scope_mismatch') return 'Google Takvim izni verilmedi. İzin ekranında Takvim etkinlikleri iznini onaylayın.'
+    if (error === 'google_refresh_token_missing') return 'Google kalıcı Takvim erişimi vermedi. Google hesap izinlerinden Muh Agent’i kaldırıp yeniden bağlayın.'
+    return 'Google Takvim bağlantısı tamamlanamadı. Ödeme Planı bölümünden yeniden deneyin.'
+  }
   if (query.get('gmail') === 'connected') return 'Gmail hesabı bağlandı; ilk güvenli senkronizasyon hazırlanıyor.'
   if (query.get('gmail') === 'cancelled') return 'Google izin ekranı kapatıldı; hiçbir Gmail hesabı bağlanmadı.'
   if (query.get('gmail') === 'expired') return 'Gmail bağlantı oturumu sona erdi. Bağlantıyı yeniden başlatın.'
@@ -371,6 +380,30 @@ function gmailConnectErrorMessage(error: unknown) {
   if (code === 'oauth_not_configured') return 'Google OAuth ayarları eksik veya token şifreleme anahtarı geçersiz; mevcut Gmail izinleri değişmedi.'
   if (code === 'oauth_start_failed') return 'Gmail OAuth başlangıcı güvenli biçimde tamamlanamadı; mevcut Gmail izinleri değişmedi.'
   return 'Gmail bağlantısı başlatılamadı; mevcut yetkiler değişmedi.'
+}
+
+function calendarConnectErrorMessage(error: unknown) {
+  const code = error instanceof ApiError ? error.code : ''
+  if (code === 'unauthorized') return 'Google Takvim bağlantısı için önce dashboarddan oturum açın.'
+  if (code === 'invalid_calendar_account') return 'Bağlanacak Gmail hesabı bulunamadı. Önce Gmail hesabını yeniden bağlayın.'
+  if (code === 'invalid_calendar_target') return 'Takvim yalnızca siostarr@hairartclinics.com hesabına bağlanabilir.'
+  if (code === 'rate_limited') return 'Takvim bağlantısı için çok sık deneme yapıldı. Bir dakika bekleyin.'
+  return 'Google Takvim izin ekranı başlatılamadı; mevcut kayıtlar değişmedi.'
+}
+
+function calendarSyncErrorMessage(error: unknown) {
+  const code = error instanceof ApiError ? error.code : ''
+  if (code === 'calendar_reauthorization_required') return 'Google Takvim izni yenilenmeli. “Google Takvim bağla” düğmesine tekrar basın.'
+  if (code === 'calendar_api_not_enabled') return 'Google Calendar API henüz etkin değil. Google Cloud projesinde Calendar API’yi açın.'
+  if (code === 'calendar_connection_missing') return 'Önce Google Takvim bağlantısını tamamlayın.'
+  if (code === 'calendar_rate_limited') return 'Takvim eşitlemesi için çok sık deneme yapıldı. Bir dakika bekleyin.'
+  if (code === 'calendar_source_inactive') return 'Bu kayıt ödenmiş, tamamlanmış veya kapatılmış; yeni takvim etkinliği oluşturulmadı.'
+  if (code === 'calendar_sync_in_progress') return 'Bu takvim hesabı zaten eşitleniyor. Kısa süre sonra yeniden deneyin.'
+  if (code === 'calendar_target_account_invalid') return 'Bu bağlantı izinli Takvim hedefi değil. siostarr@hairartclinics.com hesabını yeniden bağlayın.'
+  if (code === 'calendar_token_temporarily_unavailable') return 'Google geçici olarak yanıt vermedi. Kayıt korunuyor ve otomatik worker yeniden deneyecek.'
+  if (code === 'calendar_oauth_client_invalid') return 'Google Takvim OAuth yapılandırması geçersiz. Mevcut kayıtlar değiştirilmedi.'
+  if (code === 'calendar_write_forbidden') return 'Google bu takvime yazma izni vermedi. Takvim iznini yeniden bağlayın.'
+  return 'Google Takvim eşitlenemedi. Hiçbir ödeme veya resmi işlem yapılmadı.'
 }
 
 const evidenceLevels = new Set<EvidenceLevel>(['verified', 'review', 'demo'])
@@ -526,6 +559,26 @@ function mapDashboard(payload: DashboardResponse) {
     status: item.status === 'connected' ? 'connected' : 'reauth_required',
   }))
   const accountsById = new Map(liveAccounts.map((account) => [account.id, account.email]))
+  const liveCalendarConnections: CalendarConnection[] = (payload.calendarConnections ?? []).map((item) => ({
+    accountId: item.account_id,
+    autoSync: item.auto_sync,
+    calendarId: 'primary',
+    email: accountsById.get(item.account_id) ?? 'Bilinmeyen hesap',
+    lastError: item.last_error_code ?? undefined,
+    lastSync: item.last_sync_at ?? undefined,
+    reminderMinutes: item.reminder_minutes,
+    status: ['connected', 'reauth_required', 'paused', 'error'].includes(item.status) ? item.status as CalendarConnection['status'] : 'error',
+  }))
+  const liveCalendarEvents: CalendarEventLink[] = (payload.calendarEventLinks ?? []).map((item) => ({
+    accountId: item.account_id,
+    eventUrl: item.event_url ?? undefined,
+    lastError: item.last_error_code ?? undefined,
+    lastSyncedAt: item.last_synced_at,
+    providerEventId: item.provider_event_id,
+    sourceId: item.source_id,
+    sourceType: item.source_type === 'deadline' ? 'deadline' : 'obligation',
+    status: item.status === 'active' || item.status === 'deleted' ? item.status : 'error',
+  }))
   const liveMessages: DashboardMessage[] = payload.messages.map((item) => {
     const status = ['queued', 'processing', 'processed', 'review_required', 'failed'].includes(item.processing_status) ? item.processing_status as DashboardMessage['status'] : 'queued'
     return {
@@ -603,7 +656,7 @@ function mapDashboard(payload: DashboardResponse) {
       title: item.title,
     }
   })
-  return { accounts: liveAccounts, approvals: liveApprovals, deadlines: liveDeadlines, files: liveFiles, knowledge: liveKnowledge, messages: liveMessages, notifications: liveNotifications, obligations: liveObligations, sources: liveSources }
+  return { accounts: liveAccounts, approvals: liveApprovals, calendarConnections: liveCalendarConnections, calendarEvents: liveCalendarEvents, deadlines: liveDeadlines, files: liveFiles, knowledge: liveKnowledge, messages: liveMessages, notifications: liveNotifications, obligations: liveObligations, sources: liveSources }
 }
 
 function EvidencePill({ level }: { level: EvidenceLevel }) {
@@ -620,6 +673,7 @@ function App() {
   const [loginOpen, setLoginOpen] = useState(false)
   const [toast, setToast] = useState(initialNotice)
   const [extractingDocuments, setExtractingDocuments] = useState(false)
+  const [calendarWorkingKey, setCalendarWorkingKey] = useState('')
   const [chatInput, setChatInput] = useState('')
   const [chatMessages, setChatMessages] = useState([
     { role: 'agent', text: 'Merhaba. Gerçek hesap, belge ve resmi kaynak doğrulanmadan kesin karar vermem; hiçbir dış işlemi sessizce yürütmem.' },
@@ -657,6 +711,8 @@ function App() {
   const activeObligations = liveData?.obligations ?? obligations
   const activeDeadlines = liveData?.deadlines ?? deadlines
   const activeAccounts = liveData?.accounts ?? mailAccounts
+  const activeCalendarConnections = liveData?.calendarConnections ?? []
+  const activeCalendarEvents = liveData?.calendarEvents ?? []
   const activeFiles = liveData?.files ?? []
   const activeKnowledge = liveData?.knowledge ?? []
   const activeMessages = liveData?.messages ?? []
@@ -711,6 +767,46 @@ function App() {
     }
   }
 
+  const connectCalendar = async (accountId: string) => {
+    if (!liveMode) {
+      if (loginRequired) setLoginOpen(true)
+      showToast(loginRequired ? 'Google Takvim bağlantısı için önce dashboarddan oturum açın.' : 'Takvim bağlantısı yalnızca canlı ortamda çalışır.')
+      return
+    }
+    try {
+      const { authorizationUrl } = await beginCalendarConnection(accountId)
+      window.location.assign(authorizationUrl)
+    } catch (error) {
+      showToast(calendarConnectErrorMessage(error))
+    }
+  }
+
+  const connectDefaultCalendar = async () => {
+    const account = activeAccounts.find((item) => item.provider === 'Gmail' && item.status === 'connected' && item.email.toLowerCase() === 'siostarr@hairartclinics.com')
+    if (!account) {
+      showToast('Takvim hedefi siostarr@hairartclinics.com. Önce bu Gmail hesabını Ayarlar’dan bağlayın.')
+      setView('settings')
+      return
+    }
+    await connectCalendar(account.id)
+  }
+
+  const syncGoogleCalendar = async (accountId: string, sourceType?: 'obligation' | 'deadline', sourceId?: string) => {
+    const key = sourceType && sourceId ? `${sourceType}:${sourceId}` : `account:${accountId}`
+    setCalendarWorkingKey(key)
+    try {
+      const result = await syncCalendarEvents({ accountId, sourceId, sourceType })
+      await refreshDashboard()
+      showToast(result.totals.failed ? `Takvim kısmen eşitlendi: ${result.summary}` : `Google Takvim eşitlendi: ${result.summary}`)
+      return result.totals.failed === 0
+    } catch (error) {
+      showToast(calendarSyncErrorMessage(error))
+      return false
+    } finally {
+      setCalendarWorkingKey('')
+    }
+  }
+
   const saveKnowledge = async (input: { body: string; category: string; sourceUrl?: string; title: string }) => {
     if (!liveMode) {
       showToast(loginRequired ? 'Bilgi kaydı için önce dashboarddan oturum açın.' : 'Bilgi bankası canlı ortamda kaydedilir.')
@@ -747,7 +843,12 @@ function App() {
     setExtractingDocuments(true)
     try {
       const result = await extractDocuments(5)
-      await refreshDashboard()
+      const refreshed = await refreshDashboard()
+      const calendarTarget = refreshed.calendarConnections.find((connection) => connection.autoSync && connection.status === 'connected')
+      if (calendarTarget && result.files.some((file) => file.status !== 'failed')) {
+        await syncCalendarEvents({ accountId: calendarTarget.accountId }).catch(() => null)
+        await refreshDashboard()
+      }
       const failed = result.files.filter((file) => file.status === 'failed').length
       if (result.files.length === 0) showToast('Okunacak yeni Drive belgesi yok.')
       else if (failed) showToast(`${result.files.length - failed} belge okundu, ${failed} belge hata verdi. Detay Evrak Kasası’nda.`)
@@ -789,13 +890,13 @@ function App() {
   const content = (() => {
     switch (view) {
       case 'inbox': return <InboxView accounts={activeAccounts} live={liveMode} messageCount={liveCounts.messages} messages={activeMessages} />
-      case 'payments': return <PaymentsView items={activeObligations} live={liveMode} onOpenApprovals={() => setView('approvals')} />
+      case 'payments': return <PaymentsView calendarConnections={activeCalendarConnections} calendarEvents={activeCalendarEvents} calendarWorkingKey={calendarWorkingKey} items={activeObligations} live={liveMode} onCalendarConnect={connectDefaultCalendar} onCalendarSync={syncGoogleCalendar} onOpenApprovals={() => setView('approvals')} />
       case 'documents': return <DocumentsView documentCount={liveCounts.documents} extracting={extractingDocuments} files={activeFiles} live={liveMode} onExtract={runDocumentExtraction} />
-      case 'deadlines': return <DeadlinesView items={activeDeadlines} live={liveMode} />
+      case 'deadlines': return <><CalendarSyncPanel connections={activeCalendarConnections} workingKey={calendarWorkingKey} onConnect={connectDefaultCalendar} onSync={syncGoogleCalendar} /><DeadlinesView items={activeDeadlines} live={liveMode} /></>
       case 'life': return <LifeRadarView deadlines={activeDeadlines} knowledge={activeKnowledge} live={liveMode} notifications={activeNotifications} obligations={activeObligations} onOpenSettings={() => setView('settings')} />
       case 'approvals': return <ApprovalsView deadlines={activeDeadlines} items={approvalsState} live={liveMode} obligations={activeObligations} onApprove={approve} onNavigate={setView} />
       case 'sources': return <SourcesView sources={activeSources} />
-      case 'settings': return <SettingsView accounts={activeAccounts} knowledge={activeKnowledge} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSaveKnowledge={saveKnowledge} onSignOut={leaveSession} />
+      case 'settings': return <><CalendarSyncPanel connections={activeCalendarConnections} workingKey={calendarWorkingKey} onConnect={connectDefaultCalendar} onSync={syncGoogleCalendar} /><SettingsView accounts={activeAccounts} knowledge={activeKnowledge} live={liveMode} onConnect={connectGmail} onNotice={showToast} onSaveKnowledge={saveKnowledge} onSignOut={leaveSession} /></>
       default:
         return <OverviewView accounts={activeAccounts} approvals={approvalsState} deadlines={activeDeadlines} documentCount={liveCounts.documents} files={activeFiles} live={liveMode} loginRequired={loginRequired} messages={activeMessages} notifications={activeNotifications} obligations={activeObligations} onLogin={() => setLoginOpen(true)} onNavigate={setView} />
     }
@@ -1176,7 +1277,17 @@ function downloadDeadlineCalendar(items: Deadline[]) {
   URL.revokeObjectURL(url)
 }
 
-function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; live: boolean; onOpenApprovals: () => void }) {
+function CalendarRecordAction({ connection, eventLink, onSync, sourceId, sourceType, working }: { connection?: CalendarConnection; eventLink?: CalendarEventLink; onSync: (accountId: string, sourceType?: 'obligation' | 'deadline', sourceId?: string) => void | Promise<boolean>; sourceId: string; sourceType: 'obligation' | 'deadline'; working: boolean }) {
+  if (!connection) return null
+  return <><button className="tag-button" data-testid={`calendar-add-${sourceType}-${sourceId}`} disabled={working} onClick={() => void onSync(connection.accountId, sourceType, sourceId)}>{working ? 'Ekleniyor…' : eventLink?.status === 'active' ? 'Takvimi güncelle' : 'Takvime ekle'}</button>{eventLink?.eventUrl ? <a href={eventLink.eventUrl} target="_blank" rel="noreferrer">Takvimde aç ↗</a> : null}</>
+}
+
+function CalendarSyncPanel({ connections, onConnect, onSync, workingKey }: { connections: CalendarConnection[]; onConnect: () => void | Promise<void>; onSync: (accountId: string) => void | Promise<boolean>; workingKey: string }) {
+  const target = connections.find((connection) => connection.autoSync && connection.status === 'connected')
+  return <section className="panel info-callout"><strong>{target ? `Google Takvim bağlı: ${target.email}` : 'Takvim hedefi: siostarr@hairartclinics.com'}</strong><span>{target ? 'Doğrulanmış ödeme ve süreler bir kez oluşturulur, değişirse güncellenir; hatırlatma iki gün öncedir.' : 'Gerçek etkinlik ve otomatik iki günlük hatırlatma için yalnızca bu Gmail hesabına Takvim izni verin.'}</span>{target ? <button className="button secondary" disabled={workingKey === `account:${target.accountId}`} onClick={() => void onSync(target.accountId)}>{workingKey === `account:${target.accountId}` ? 'Eşitleniyor…' : 'Şimdi eşitle'}</button> : <button className="button primary" data-testid="calendar-connect" onClick={() => void onConnect()}>Google Takvim bağla</button>}</section>
+}
+
+function PaymentsView({ calendarConnections, calendarEvents, calendarWorkingKey, items, live, onCalendarConnect, onCalendarSync, onOpenApprovals }: { calendarConnections: CalendarConnection[]; calendarEvents: CalendarEventLink[]; calendarWorkingKey: string; items: Obligation[]; live: boolean; onCalendarConnect: () => void | Promise<void>; onCalendarSync: (accountId: string, sourceType?: 'obligation' | 'deadline', sourceId?: string) => void | Promise<boolean>; onOpenApprovals: () => void }) {
   const sorted = [...items].sort((a, b) => paymentSortValue(a) - paymentSortValue(b))
   const openItems = sorted.filter((item) => item.status !== 'paid')
   const totalOpen = openItems.reduce((sum, item) => sum + item.amount, 0)
@@ -1187,13 +1298,14 @@ function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; l
   }).length
   const authorityGroups = groupByAuthority(sorted)
   const nextActionItem = openItems.find((item) => validPaymentDate(item.dueDate)) ?? openItems[0]
+  const calendarTarget = calendarConnections.find((connection) => connection.autoSync && connection.status === 'connected')
 
   return <>
     <PageIntro
       eyebrow="PARA VE YÜKÜMLÜLÜKLER"
       title="Tek ödeme takvimi"
       detail="Belgelerden çıkan tutar, kurum, son ödeme ve itiraz süreleri burada gün sayacıyla görünür. Ödeme/taksit linkleri resmi kurum sayfalarına gider; para transferi otomatik yapılmaz."
-      action={<div className="action-pair"><button className="button primary" onClick={onOpenApprovals}>Onayları aç →</button><button className="button secondary" onClick={() => downloadPaymentCalendar(sorted)}>Takvim indir (.ics)</button></div>}
+      action={<div className="action-pair"><button className="button primary" onClick={onOpenApprovals}>Onayları aç →</button>{calendarTarget ? <button className="button secondary" data-testid="calendar-sync-all-payments" disabled={calendarWorkingKey === `account:${calendarTarget.accountId}`} onClick={() => void onCalendarSync(calendarTarget.accountId)}>{calendarWorkingKey === `account:${calendarTarget.accountId}` ? 'Takvim eşitleniyor…' : 'Google Takvim’i eşitle'}</button> : <><span className="pill evidence-review">Takvim hedefi: siostarr@hairartclinics.com</span><button className="button secondary" data-testid="calendar-connect" onClick={() => void onCalendarConnect()}>Google Takvim bağla</button></>}<button className="button ghost" onClick={() => downloadPaymentCalendar(sorted)}>Yedek .ics</button></div>}
     />
     <div className="payment-summary-grid">
       <MetricCard label="Açık toplam" value={formatEuro(totalOpen)} suffix="" detail="Ödenmemiş / itirazdaki kayıtlar" tone="blue" />
@@ -1230,6 +1342,7 @@ function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; l
             guidance?.paymentPlanUrl ? `Taksit/plan: ${guidance.paymentPlanUrl}` : null,
             guidance?.objectionUrl ? `İtiraz: ${guidance.objectionUrl}` : null,
           ].filter(Boolean).join('\n')
+          const calendarEvent = calendarTarget ? calendarEvents.find((event) => event.accountId === calendarTarget.accountId && event.sourceType === 'obligation' && event.sourceId === item.id) : undefined
           return <article className={`payment-calendar-row ${time.tone}`} key={item.id}>
             <div className={`payment-days ${time.tone}`}><strong>{time.label}</strong><span>{validPaymentDate(item.dueDate) ?? 'tarih yok'}</span></div>
             <div className="payment-main">
@@ -1246,7 +1359,8 @@ function PaymentsView({ items, live, onOpenApprovals }: { items: Obligation[]; l
               <EvidencePill level={item.evidence} />
               <div className="payment-links">
                 {item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Belge/mail ↗</a>}
-                {validPaymentDate(item.dueDate) && <a href={googleCalendarUrl(`Muh Agent: ${item.title}`, item.dueDate, calendarDescription)} target="_blank" rel="noreferrer">Google Takvim ↗</a>}
+                {validPaymentDate(item.dueDate) && <CalendarRecordAction connection={calendarTarget} eventLink={calendarEvent} onSync={onCalendarSync} sourceId={item.id} sourceType="obligation" working={calendarWorkingKey === `obligation:${item.id}`} />}
+                {validPaymentDate(item.dueDate) && <a href={googleCalendarUrl(`Muh Agent: ${item.title}`, item.dueDate, calendarDescription)} target="_blank" rel="noreferrer">Takvim taslağı ↗</a>}
                 {guidance?.paymentUrl && <a href={guidance.paymentUrl} target="_blank" rel="noreferrer">{guidance.portalLabel ?? 'Ödeme'} ↗</a>}
                 {guidance?.paymentPlanUrl && <a href={guidance.paymentPlanUrl} target="_blank" rel="noreferrer">Taksit ↗</a>}
                 {guidance?.objectionUrl && <a href={guidance.objectionUrl} target="_blank" rel="noreferrer">İtiraz ↗</a>}

@@ -15,6 +15,25 @@ export interface DashboardResponse {
     scopes: string[]
     status: string
   }>
+  calendarConnections: Array<{
+    account_id: string
+    auto_sync: boolean
+    calendar_id: string
+    last_error_code: string | null
+    last_sync_at: string | null
+    reminder_minutes: number
+    status: string
+  }>
+  calendarEventLinks: Array<{
+    account_id: string
+    event_url: string | null
+    last_error_code: string | null
+    last_synced_at: string
+    provider_event_id: string
+    source_id: string
+    source_type: string
+    status: string
+  }>
   messages: Array<{
     account_id: string
     classification: string | null
@@ -187,6 +206,26 @@ export function decideApproval(id: string, decision: 'approved' | 'rejected') {
 export function beginGmailConnection(includeDrive = false) {
   return request<{ authorizationUrl: string }>('/api/gmail/connect', {
     body: JSON.stringify({ includeDrive }),
+    method: 'POST',
+  })
+}
+
+export function beginCalendarConnection(accountId: string) {
+  return request<{ authorizationUrl: string }>('/api/calendar/connect', {
+    body: JSON.stringify({ accountId }),
+    method: 'POST',
+  })
+}
+
+export function syncCalendarEvents(input: { accountId: string; sourceId?: string; sourceType?: 'obligation' | 'deadline' }) {
+  return request<{
+    artifacts: Array<{ action: string; error?: string; eventId?: string; eventUrl?: string | null; sourceId: string; sourceType: string }>
+    completedAt: string
+    status: 'success' | 'warning'
+    summary: string
+    totals: { created: number; deleted: number; failed: number; skipped: number; updated: number }
+  }>('/api/calendar/sync', {
+    body: JSON.stringify(input),
     method: 'POST',
   })
 }

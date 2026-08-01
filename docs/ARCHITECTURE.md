@@ -18,7 +18,7 @@ Bu ayrım Kimi sürümündeki temel sorunu çözer: görsel bir “bağlandı/ca
 - **Kimlik:** Supabase Auth PKCE; server request başına yeni istemci oluşturur. Token'lar host-only, HttpOnly, `SameSite=Lax` ve HTTPS'te `Secure` çerezde tutulur.
 - **Veri:** Postgres + Row Level Security. Hassas içerik tarayıcı `localStorage`'ında tutulmaz.
 - **Dosya:** Şifreli object storage; dosya tipi, boyutu ve zararlı içerik kontrolü.
-- **E-posta:** Her hesap için ayrı Gmail OAuth; ilk faz yalnızca `gmail.readonly` ve profil e-postası. Drive ayrı ve açık kullanıcı onayı ile.
+- **E-posta ve takvim:** Her hesap için ayrı Gmail OAuth; ilk bağlantı `gmail.readonly`, Drive ayrı onay, Takvim ise yalnızca seçilen hesaba eklenen `calendar.events.owned` kapsamıyla açılır.
 - **Worker:** Bilgisayardan bağımsız, managed scheduler + kuyruk + lease. Her mesaj için provider ID ve kullanıcı ID üzerinde idempotency.
 - **LLM:** Kaynak parçaları ve çıkarım sonuçları arasındaki ilişki saklanır. Model eğitimi için kişisel veri kullanılmaz.
 - **Bildirim:** Son tarih, token yenileme hatası ve kritik kaynak değişikliği için e-posta/push; bildirimin içine BSN veya tam belge gövdesi yazılmaz.
@@ -49,7 +49,11 @@ Kullanıcı onayı
 
 Token değişiminde redirect URI tek bir üretim origin'inden üretilecek; `http`/`https` farkı ve proxy header'ları test edilecek. Refresh token hiçbir zaman frontend bundle'ına, URL'ye veya loga yazılmaz.
 
-## 5. Bilgi ve hukuk akışı
+## 5. Google Calendar yaşam döngüsü
+
+Doğrulanmış ve açık ödeme/süre kayıtları açıkça seçilen Gmail hesabının `primary` takvimine özel etkinlik olarak yazılır. Etkinlik ID'si kaynak türü + kaynak UUID'sinden deterministik üretildiği için yeniden çalıştırma kopya oluşturmaz; içerik değişirse aynı etkinlik güncellenir. Varsayılan hatırlatma son tarihten 2 gün öncedir. Ham OCR metni, BSN, tam belge gövdesi ve kaynak/ödeme URL'leri takvim açıklamasına yazılmaz; etkinlik yalnızca same-origin Muh Agent kaydına döner. Kullanıcının tek kayıt düğmesi inceleme seviyesindeki bir kaydı da açıkça ekleyebilir; otomatik worker yalnızca `verified` kayıtları işler.
+
+## 6. Bilgi ve hukuk akışı
 
 IND, CJIB, Belastingdienst, Gemeente Waterland, Rechtspraak ve Rijksoverheid gibi kaynaklar bir “kaynak kaydı” olarak izlenir. Ajan bir sonuca şu alanları eklemeden kullanıcıya kritik öneri göstermez:
 
@@ -63,7 +67,7 @@ IND, CJIB, Belastingdienst, Gemeente Waterland, Rechtspraak ve Rijksoverheid gib
 
 Kişisel IND dosyası için uygulama belge listesi ve soru hazırlığı yapabilir; sonucu avukat belirler. Hamilelikte sağlık önerileri klinik karar yerine bakım takvimi ve resmi hizmet bulma desteği olarak kalır.
 
-## 6. Fazlar
+## 7. Fazlar
 
 ### Faz 1 — Cockpit temeli (tamamlandı)
 
@@ -73,9 +77,9 @@ Gerçek/demoyu ayıran arayüz, onay merkezi, süre/kanıt modeli ve resmi kayna
 
 HttpOnly BFF, Supabase migration, RLS, kullanıcı profili ve audit modeli hazırdır. Ayrı staging projesinde migration/advisor ve gerçek PKCE kabul testi yayın kapısıdır. Şifreli dosya saklama ve veri dışa aktarma/silme sonraki adımdır.
 
-### Faz 3 — Gmail/Drive (sunucu kodu hazır, dış yapılandırma bekliyor)
+### Faz 3 — Gmail/Drive/Calendar (canlı altyapı hazır, kullanıcı kabulü gerekli)
 
-OAuth state, callback, AES-GCM refresh-token kasası, readonly sync, retry/backoff ve yeniden yetkilendirme modeli hazırdır. Google Cloud consent/redirect sırları ve 4 gerçek hesapla kabul testi yapılmadan canlı sayılmaz. Drive ayrı kullanıcı onayı olmadan istenmez.
+OAuth state, callback, AES-GCM refresh-token kasası, readonly sync, retry/backoff ve yeniden yetkilendirme modeli hazırdır. Google Calendar API ve idempotent etkinlik worker'ı yayınlanmıştır. Her yeni hesap/izin için gerçek kullanıcı consent dönüşü ve ilk etkinlik kabul testi ayrıca kanıtlanır. Drive ve Takvim ayrı kullanıcı onayı olmadan istenmez.
 
 ### Faz 4 — Kaynak ve ajan motoru
 

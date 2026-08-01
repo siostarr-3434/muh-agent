@@ -77,6 +77,28 @@ export interface MailAccount {
   lastSync?: string
 }
 
+export interface CalendarConnection {
+  accountId: string
+  autoSync: boolean
+  calendarId: 'primary'
+  email: string
+  lastError?: string
+  lastSync?: string
+  reminderMinutes: number
+  status: 'connected' | 'reauth_required' | 'paused' | 'error'
+}
+
+export interface CalendarEventLink {
+  accountId: string
+  eventUrl?: string
+  lastError?: string
+  lastSyncedAt: string
+  providerEventId: string
+  sourceId: string
+  sourceType: 'obligation' | 'deadline'
+  status: 'active' | 'deleted' | 'error'
+}
+
 export interface DashboardMessage {
   id: string
   accountId: string
